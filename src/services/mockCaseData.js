@@ -108,6 +108,8 @@ export const mockUsers = [
       PERMISSIONS.APPROVE_ACCESS,
       PERMISSIONS.UPDATE_CASE_STATUS,
       PERMISSIONS.SEARCH_CASE_RECORDS,
+      PERMISSIONS.VIEW_AUDIT_LOG,
+      PERMISSIONS.EXPORT_AUDIT_LOG,
     ],
   },
   {
@@ -171,6 +173,8 @@ export const mockUsers = [
       PERMISSIONS.UPDATE_CASE_STATUS,
       PERMISSIONS.SEARCH_CASE_RECORDS,
       PERMISSIONS.REVIEW_SENSITIVE_RECORDS,
+      PERMISSIONS.VIEW_AUDIT_LOG,
+      PERMISSIONS.EXPORT_AUDIT_LOG,
     ],
   },
   {
@@ -519,6 +523,8 @@ let _documents = [
     uploadedAt: '2026-09-01T10:00:00.000Z',
     currentVersionId: 'ver-001',
     status: 'ACTIVE',
+    integrityStatus: 'VERIFIED',
+    integrityCheckedAt: '2026-09-01T10:01:00.000Z',
   },
   {
     id: 'doc-002',
@@ -534,6 +540,8 @@ let _documents = [
     uploadedAt: '2026-09-04T15:00:00.000Z',
     currentVersionId: 'ver-002',
     status: 'ACTIVE',
+    integrityStatus: 'VERIFIED',
+    integrityCheckedAt: '2026-09-04T15:01:00.000Z',
   },
   {
     id: 'doc-003',
@@ -549,6 +557,8 @@ let _documents = [
     uploadedAt: '2026-09-03T17:00:00.000Z',
     currentVersionId: 'ver-003',
     status: 'ACTIVE',
+    integrityStatus: 'VERIFIED',
+    integrityCheckedAt: '2026-09-03T17:01:00.000Z',
   },
 ]
 
@@ -597,10 +607,63 @@ let _documentVersions = [
   },
 ]
 
+// Audit events are append-only.  In production this collection maps to a
+// write-once audit store; the mock keeps the same contract in memory.
+let _auditLogs = [
+  {
+    id: 'audit-001',
+    action: 'DOCUMENT_VIEW',
+    category: 'DOCUMENT',
+    actorId: 'a.singh',
+    actorRank: 'Inspector',
+    resourceType: 'DOCUMENT',
+    resourceId: 'doc-001',
+    resourceLabel: 'FIR_0425.pdf',
+    caseId: 'case-2026-001',
+    result: 'SUCCESS',
+    details: 'Document security profile viewed',
+    ipAddress: '10.84.16.31',
+    device: 'Edge',
+    timestamp: '2026-09-08T09:48:00.000Z',
+  },
+  {
+    id: 'audit-002',
+    action: 'INTEGRITY_VERIFIED',
+    category: 'DOCUMENT',
+    actorId: 'r.mehta',
+    actorRank: 'Assistant Sub-Inspector (ASI)',
+    resourceType: 'DOCUMENT',
+    resourceId: 'doc-002',
+    resourceLabel: 'Forensic_Report.pdf',
+    caseId: 'case-2026-003',
+    result: 'SUCCESS',
+    details: 'Stored SHA-256 hash verified',
+    ipAddress: '10.84.16.25',
+    device: 'Safari',
+    timestamp: '2026-09-08T11:12:00.000Z',
+  },
+  {
+    id: 'audit-003',
+    action: 'RESTRICTED_ACCESS_ATTEMPT',
+    category: 'ACCESS',
+    actorId: 'constable.test',
+    actorRank: 'Constable',
+    resourceType: 'CASE',
+    resourceId: 'case-2026-002',
+    resourceLabel: 'CASE-2026-002',
+    caseId: 'case-2026-002',
+    result: 'DENIED',
+    details: 'Case access denied by assignment and jurisdiction policy',
+    ipAddress: '10.84.16.44',
+    device: 'Chrome',
+    timestamp: '2026-09-08T12:36:00.000Z',
+  },
+]
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ID GENERATOR
 // ─────────────────────────────────────────────────────────────────────────────
-let _counters = { case: 4, member: 7, evidence: 5, statement: 4, fact: 5, update: 6, document: 4, version: 4 }
+let _counters = { case: 4, member: 7, evidence: 5, statement: 4, fact: 5, update: 6, document: 4, version: 4, audit: 4 }
 const nextId = (prefix, counter) => {
   const n = _counters[counter]++
   return `${prefix}-${String(n).padStart(3, '0')}`
@@ -760,6 +823,7 @@ export const db = {
       uploadedAt: new Date().toISOString(),
       currentVersionId: null,
       status: 'ACTIVE',
+      integrityStatus: 'PENDING',
     }
     _documents.push(doc)
     return doc
@@ -796,9 +860,48 @@ export const db = {
     doc.statusChangedAt = new Date().toISOString()
     return doc
   },
+  updateDocumentIntegrity: (documentId, integrityStatus, checkedBy, details = {}) => {
+    const doc = _documents.find(d => d.id === documentId)
+    if (!doc) throw new Error('Document not found')
+    doc.integrityStatus = integrityStatus
+    doc.integrityCheckedBy = checkedBy
+    doc.integrityCheckedAt = new Date().toISOString()
+    doc.integrityDetails = details
+    return doc
+  },
   // NOTE: Physical deletion of legal documents is strictly forbidden.
   deleteDocument: () => {
     throw new Error('Physical deletion forbidden: Legal documents and historical versions are immutable by law.')
+  },
+
+  // Audit trail (append-only)
+  addAuditLog: (data) => {
+    const event = {
+      id: nextId('audit', 'audit'),
+      timestamp: new Date().toISOString(),
+      result: 'SUCCESS',
+      category: 'SYSTEM',
+      ...data,
+    }
+    _auditLogs.push(event)
+    return event
+  },
+  getAuditLogs: (filters = {}) => {
+    let events = [..._auditLogs]
+    if (filters.action && filters.action !== 'ALL') events = events.filter(e => e.action === filters.action)
+    if (filters.category && filters.category !== 'ALL') events = events.filter(e => e.category === filters.category)
+    if (filters.result && filters.result !== 'ALL') events = events.filter(e => e.result === filters.result)
+    if (filters.actorId && filters.actorId !== 'ALL') events = events.filter(e => e.actorId === filters.actorId)
+    if (filters.caseId && filters.caseId !== 'ALL') events = events.filter(e => e.caseId === filters.caseId)
+    if (filters.documentId && filters.documentId !== 'ALL') events = events.filter(e => e.resourceId === filters.documentId || e.documentId === filters.documentId)
+    if (filters.from) events = events.filter(e => new Date(e.timestamp) >= new Date(filters.from))
+    if (filters.to) events = events.filter(e => new Date(e.timestamp) <= new Date(filters.to))
+    if (filters.search?.trim()) {
+      const query = filters.search.trim().toLowerCase()
+      events = events.filter(e => [e.action, e.details, e.resourceLabel, e.actorId, e.ipAddress]
+        .filter(Boolean).some(value => String(value).toLowerCase().includes(query)))
+    }
+    return events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
   },
 
   // Investigation History (unified timeline across all record types)
@@ -825,6 +928,16 @@ export const db = {
         })
       })
     })
+    _auditLogs.filter(e => e.caseId === caseId).forEach(e => events.push({
+      type: 'AUDIT',
+      icon: 'audit',
+      date: e.timestamp,
+      label: e.action.replace(/_/g, ' '),
+      detail: e.details || `${e.result} · ${e.resourceLabel || e.resourceId || 'case record'}`,
+      by: e.actorId,
+      id: e.id,
+      result: e.result,
+    }))
     return events.sort((a, b) => new Date(b.date) - new Date(a.date))
   },
 }

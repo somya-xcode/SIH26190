@@ -23,6 +23,7 @@ export function FaceAuthentication({
   onVerificationComplete,
   verificationResult,
   disabled = false,
+  registrationMode = false,
 }) {
   const [status, setStatus] = useState(
     verificationResult?.verified ? AUTH_STATES.SUCCESS : AUTH_STATES.IDLE
@@ -40,6 +41,7 @@ export function FaceAuthentication({
   const streamRef = useRef(null)
   const detectionLoopRef = useRef(null)
   const holdTimerRef = useRef(null)
+  const faceDetectedRef = useRef(false)
 
   // Keep statusRef in sync with status
   useEffect(() => {
@@ -80,6 +82,7 @@ export function FaceAuthentication({
     statusRef.current = AUTH_STATES.IDLE
     setHoldProgress(0)
     setConfidence(0)
+    faceDetectedRef.current = false
     setErrorMessage('')
     onVerificationComplete?.(null)
   }, [stopAll, onVerificationComplete])
@@ -87,15 +90,23 @@ export function FaceAuthentication({
   // Start identity verification once face is reliably held in frame
   const triggerIdentityVerification = useCallback(
     async (captureData, score) => {
+      if (!faceDetectedRef.current || !captureData) {
+        setStatus(AUTH_STATES.NO_FACE)
+        statusRef.current = AUTH_STATES.NO_FACE
+        setErrorMessage('A human face must be detected before scanning can begin.')
+        return
+      }
+
       setStatus(AUTH_STATES.VERIFYING)
       statusRef.current = AUTH_STATES.VERIFYING
       setErrorMessage('')
 
       try {
         const result = await faceAuthenticationService.verifyBiometricIdentity({
-          userId: userId || 'demo.investigator',
+          userId,
           faceCaptureData: captureData,
           detectionConfidence: score,
+          registrationMode,
         })
 
         if (!isScanningRef.current) return
@@ -120,7 +131,7 @@ export function FaceAuthentication({
         onVerificationComplete?.(null)
       }
     },
-    [userId, onVerificationComplete, stopAll]
+    [userId, onVerificationComplete, registrationMode, stopAll]
   )
 
   // Start camera and continuous face detection loop
@@ -130,6 +141,7 @@ export function FaceAuthentication({
     setErrorMessage('')
     setHoldProgress(0)
     setConfidence(0)
+    faceDetectedRef.current = false
     setStatus(AUTH_STATES.REQUESTING_CAMERA)
     statusRef.current = AUTH_STATES.REQUESTING_CAMERA
 
@@ -167,7 +179,14 @@ export function FaceAuthentication({
 
           if (!isScanningRef.current) return
 
-          if (detection.detected) {
+          if (detection.reason && detection.reason !== 'Video feed not ready') {
+            setErrorMessage(detection.reason)
+          }
+
+          const hasCenteredHumanFace = detection.detected && detection.centered
+
+          if (hasCenteredHumanFace) {
+            faceDetectedRef.current = true
             consecutiveDetections++
             lastScore = detection.confidence
             lastCapture = detection.captureDataUrl
@@ -196,6 +215,7 @@ export function FaceAuthentication({
               })
             }
           } else {
+            faceDetectedRef.current = false
             consecutiveDetections = Math.max(0, consecutiveDetections - 1)
             setHoldProgress(prev => Math.max(0, prev - 10))
 
@@ -243,7 +263,7 @@ export function FaceAuthentication({
         return {
           tone: 'neutral',
           text: 'Face authentication required',
-          desc: 'Position yourself in front of the camera and click scan.',
+          desc: 'Start the camera. Biometric scanning begins only after a centered human face is detected.',
           icon: ScanFace,
         }
       case AUTH_STATES.REQUESTING_CAMERA:
@@ -257,7 +277,7 @@ export function FaceAuthentication({
         return {
           tone: 'warning',
           text: 'No face detected. Position your face inside the frame.',
-          desc: 'Ensure your room is well lit and look directly into the camera.',
+          desc: errorMessage || 'Ensure your room is well lit and look directly into the camera.',
           icon: Eye,
         }
       case AUTH_STATES.FACE_DETECTED:
@@ -277,8 +297,10 @@ export function FaceAuthentication({
       case AUTH_STATES.SUCCESS:
         return {
           tone: 'success',
-          text: 'Face verified successfully ✓',
-          desc: `Officer identity authenticated (${confidence || 98}% biometric confidence).`,
+          text: registrationMode ? 'Face registered successfully ✓' : 'Face verified successfully ✓',
+          desc: registrationMode
+            ? `Biometric profile created for ${userId || 'this account'} (${confidence || 98}% confidence).`
+            : `Officer identity authenticated (${confidence || 98}% biometric confidence).`,
           icon: CheckCircle2,
         }
       case AUTH_STATES.FAILURE:
@@ -319,8 +341,8 @@ export function FaceAuthentication({
         <div className="face-auth-title-row">
           <ScanFace className="face-auth-main-icon" size={20} />
           <div>
-            <h3>Face Authentication</h3>
-            <p>Second-factor biometric identity validation</p>
+            <h3>{registrationMode ? 'Face Registration' : 'Face Authentication'}</h3>
+            <p>{registrationMode ? 'Create a biometric profile for this account' : 'Second-factor biometric identity validation'}</p>
           </div>
         </div>
 
@@ -361,8 +383,8 @@ export function FaceAuthentication({
             <div className="success-check-badge">
               <CheckCircle2 size={44} />
             </div>
-            <h4>Biometric Factor Approved</h4>
-            <p>Identity confirmed with high confidence</p>
+            <h4>{registrationMode ? 'Face Profile Registered' : 'Biometric Factor Approved'}</h4>
+            <p>{registrationMode ? 'Face registration completed successfully' : 'Identity confirmed with high confidence'}</p>
             <div className="success-metric-row">
               <span>Confidence: <b>{confidence || 98.4}%</b></span>
               <span>Method: <b>Facial Geometry</b></span>

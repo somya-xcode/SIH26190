@@ -12,9 +12,11 @@
  */
 
 import { mockUsers } from './mockCaseData'
-import { verifySelectedPosition } from './accessControl'
+import { FUNCTIONAL_ROLES, getPermissionsForRank, getRankAccessLevel } from './accessControl'
+import { auditService, AUDIT_ACTIONS } from './auditService'
 
 const STORAGE_KEY = 'docguard_auth_session'
+export const LOCAL_USERS_STORAGE_KEY = 'docguard_local_users'
 
 // Credential lookup table (passwords only — full profile loaded from mockUsers)
 const MOCK_CREDENTIALS = [
@@ -26,7 +28,55 @@ const MOCK_CREDENTIALS = [
   { id: 'constable.test', password: 'Constable@123' },
 ]
 
+function getLocalUsers() {
+  try {
+    const stored = localStorage.getItem(LOCAL_USERS_STORAGE_KEY)
+    const users = stored ? JSON.parse(stored) : []
+    return Array.isArray(users) ? users : []
+  } catch {
+    return []
+  }
+}
+
+function findUser(userId) {
+  const normalizedId = userId.trim().toLowerCase()
+  return [...mockUsers, ...getLocalUsers()].find(user => user.id.toLowerCase() === normalizedId)
+}
+
 export const authService = {
+  userExists(userId) {
+    return Boolean(userId && findUser(userId))
+  },
+
+  registerLocalUser({ id, password, name, phone, rank, biometricToken }) {
+    const normalizedId = id.trim().toLowerCase()
+    if (this.userExists(normalizedId)) {
+      throw new Error('That username is already registered. Please choose another username.')
+    }
+
+    const localUser = {
+      id: normalizedId,
+      password,
+      name: name.trim(),
+      role: rank,
+      functionalRole: FUNCTIONAL_ROLES.INVESTIGATION_OFFICER,
+      rank,
+      accessLevel: getRankAccessLevel(rank),
+      department: 'Investigation Services',
+      policeStation: 'Assigned Police Station',
+      jurisdiction: 'India',
+      phone: phone.trim(),
+      initials: name.trim().split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase(),
+      enrolledBiometrics: true,
+      biometricToken,
+      permissions: getPermissionsForRank(rank),
+    }
+
+    const users = getLocalUsers()
+    localStorage.setItem(LOCAL_USERS_STORAGE_KEY, JSON.stringify([...users, localUser]))
+    return localUser
+  },
+
   /**
    * Validate User ID and Password without exposing which field failed.
    * Returns full sanitized user profile from mockUsers (Phase 2 extended data).
@@ -36,6 +86,7 @@ export const authService = {
     await new Promise(resolve => setTimeout(resolve, 350))
 
     if (!userId || !password) {
+      auditService.record({ action: AUDIT_ACTIONS.LOGIN_FAILURE, actorId: userId?.trim().toLowerCase(), result: 'FAILURE', details: 'Login rejected because required credentials were missing.' })
       throw new Error('Please enter both User ID and password.')
     }
 
@@ -45,29 +96,32 @@ export const authService = {
     const cred = MOCK_CREDENTIALS.find(
       u => u.id.toLowerCase() === trimmedId && u.password === password
     )
+    const localUser = getLocalUsers().find(
+      u => u.id.toLowerCase() === trimmedId && u.password === password
+    )
 
-    if (!cred) {
+    if (!cred && !localUser) {
+      auditService.record({ action: AUDIT_ACTIONS.LOGIN_FAILURE, actorId: trimmedId, result: 'FAILURE', details: 'Invalid credentials supplied.' })
       // Intentionally generic security error message
       throw new Error('Invalid User ID or password.')
     }
 
     // Step 2: Load full user profile from Phase 2 data store (ABAC data)
-    const fullUser = mockUsers.find(u => u.id.toLowerCase() === trimmedId)
+    const fullUser = findUser(trimmedId)
     if (!fullUser) {
+      auditService.record({ action: AUDIT_ACTIONS.LOGIN_FAILURE, actorId: trimmedId, result: 'FAILURE', details: 'Credential matched but no user profile was available.' })
       throw new Error('User profile not found. Contact system administrator.')
     }
 
     // Return public user data without password
     const { password: _, ...safeUser } = fullUser
+    safeUser.permissions = getPermissionsForRank(safeUser.rank)
+    safeUser.accessLevel = getRankAccessLevel(safeUser.rank)
     return safeUser
   },
 
   /**
    * Complete 2FA login requiring BOTH valid credentials AND face verification.
-   * Phase 2: Accepts selectedPosition for context (NOT for authorization).
-   *
-   * SECURITY: selectedPosition is verified against DB rank.
-   * The database rank ALWAYS takes precedence for all access decisions.
    */
   async completeLogin({ userId, password, faceVerification, selectedPosition }) {
     // 1. Validate credentials and get full user profile
@@ -75,20 +129,11 @@ export const authService = {
 
     // 2. Validate face verification factor
     if (!faceVerification || !faceVerification.verified) {
+      auditService.record({ action: AUDIT_ACTIONS.BIOMETRIC_FAILURE, user: safeUser, result: 'FAILURE', details: 'Face authentication factor was not completed.' })
       throw new Error('Face authentication required. Please complete face scan.')
     }
 
-    // 3. SECURITY CHECK: Verify selected position against authenticated DB rank.
-    // If the selected position does NOT match the user's actual registered rank, BLOCK login!
-    const positionVerification = verifySelectedPosition(safeUser, selectedPosition)
-    if (!positionVerification.verified) {
-      throw new Error(
-        positionVerification.error ||
-        `Position Verification Failed: Selected position "${selectedPosition}" does not match your officially registered rank "${safeUser.rank}". Access Denied.`
-      )
-    }
-
-    // 4. Construct authenticated session object
+    // 3. Construct authenticated session object
     const session = {
       isAuthenticated: true,
       user: safeUser, // Full user profile with permissions from DB
@@ -98,14 +143,14 @@ export const authService = {
       },
       faceBiometricToken: faceVerification.biometricToken || 'mock_bio_token_' + Date.now(),
       loginTime: new Date().toISOString(),
-      selectedPosition: selectedPosition || safeUser.rank,
-      positionVerification,
+      selectedPosition: safeUser.rank,
       permissions: safeUser.permissions || [],
       accessLevel: safeUser.accessLevel,
       rank: safeUser.rank, // Authoritative rank from DB
     }
 
     this.setStoredSession(session)
+    auditService.record({ action: AUDIT_ACTIONS.LOGIN_SUCCESS, user: safeUser, details: 'Password and face authentication completed.' })
     return session
   },
 
@@ -151,14 +196,4 @@ export const authService = {
     }
   },
 
-  /**
-   * Get default mock credentials for display / demo hint
-   */
-  getDemoCredentials() {
-    return {
-      userId: 'demo.investigator',
-      password: 'Demo@12345',
-      officer: 'Pranshu Kumar (SI – Investigation Officer)',
-    }
-  },
 }

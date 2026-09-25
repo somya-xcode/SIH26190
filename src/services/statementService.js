@@ -10,6 +10,7 @@
 import { db } from './mockCaseData'
 import { hasPermission, PERMISSIONS } from './accessControl'
 import { caseService } from './caseService'
+import { auditService, AUDIT_ACTIONS } from './auditService'
 
 export const statementService = {
   /**
@@ -39,6 +40,7 @@ export const statementService = {
    */
   addStatement(user, caseId, data) {
     if (!hasPermission(user, PERMISSIONS.ADD_WITNESS_STATEMENT)) {
+      auditService.recordDenied({ user, action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT, resourceType: 'WITNESS_STATEMENT', caseId, reason: 'Witness statement permission is required.' })
       throw new Error('Access denied: You do not have permission to record witness statements.')
     }
     caseService.getCaseById(user, caseId)
@@ -48,7 +50,7 @@ export const statementService = {
     if (!statementDate) throw new Error('Statement date is required')
     if (!statementText?.trim()) throw new Error('Statement text is required')
 
-    return db.addStatement({
+    const statement = db.addStatement({
       caseId,
       witnessRef: witnessRef.trim().toUpperCase(),
       statementDate,
@@ -61,6 +63,8 @@ export const statementService = {
       previousStatementId: null,
       changeReason: null,
     })
+    auditService.record({ action: AUDIT_ACTIONS.STATEMENT_ADDED, user, resourceType: 'WITNESS_STATEMENT', resourceId: statement.id, resourceLabel: statement.witnessRef, caseId, details: 'Witness statement appended.' })
+    return statement
   },
 
   /**
@@ -69,6 +73,7 @@ export const statementService = {
    */
   addSupplementaryStatement(user, caseId, originalStatementId, data) {
     if (!hasPermission(user, PERMISSIONS.ADD_WITNESS_STATEMENT)) {
+      auditService.recordDenied({ user, action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT, resourceType: 'WITNESS_STATEMENT', resourceId: originalStatementId, caseId, reason: 'Supplementary statement permission is required.' })
       throw new Error('Access denied: You do not have permission to record statements.')
     }
     caseService.getCaseById(user, caseId)
@@ -82,7 +87,7 @@ export const statementService = {
     if (!statementText?.trim()) throw new Error('Supplementary statement text is required')
     if (!changeReason?.trim()) throw new Error('Reason for supplementary statement is required')
 
-    return db.addSupplementaryStatement(originalStatementId, {
+    const statement = db.addSupplementaryStatement(originalStatementId, {
       statementDate,
       statementText: statementText.trim(),
       recordedBy: user.id,
@@ -90,6 +95,8 @@ export const statementService = {
       status: 'ACTIVE',
       changeReason: changeReason.trim(),
     })
+    auditService.record({ action: AUDIT_ACTIONS.STATEMENT_SUPPLEMENTED, user, resourceType: 'WITNESS_STATEMENT', resourceId: statement.id, resourceLabel: statement.witnessRef, caseId, details: statement.changeReason })
+    return statement
   },
 
   // NOTE: deleteStatement() does NOT exist — by design.

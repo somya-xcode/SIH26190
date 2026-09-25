@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { authService } from '../services/authService'
+import { auditService, AUDIT_ACTIONS } from '../services/auditService'
 
 const AuthContext = createContext(null)
 
@@ -41,15 +42,12 @@ export function AuthProvider({ children }) {
 
   /**
    * Complete 2FA login.
-   * Phase 2: selectedPosition passed through to authService for verification logging.
-   * The selectedPosition is NEVER used for authorization — only the DB rank is authoritative.
    */
-  const login = async (userId, password, faceVerification, selectedPosition) => {
+  const login = async (userId, password, faceVerification) => {
     const newSession = await authService.completeLogin({
       userId,
       password,
       faceVerification,
-      selectedPosition, // Passed for context/logging, NOT for authorization
     })
     setSession(newSession)
     navigate('/')
@@ -58,6 +56,7 @@ export function AuthProvider({ children }) {
 
   // Logout
   const logout = () => {
+    auditService.record({ action: AUDIT_ACTIONS.LOGOUT, user: session?.user, details: 'User session ended.' })
     authService.clearSession()
     setSession(null)
     navigate('/login')

@@ -8,6 +8,7 @@ import { db } from './mockCaseData'
 import { hasPermission, PERMISSIONS } from './accessControl'
 import { caseService } from './caseService'
 import { cryptoService } from './cryptoService'
+import { auditService, AUDIT_ACTIONS } from './auditService'
 
 // Supported MIME types and their display labels
 const ALLOWED_MIME_TYPES = {
@@ -42,7 +43,7 @@ export const documentService = {
    */
   getDocuments(user, caseId) {
     caseService.getCaseById(user, caseId)
-    return db.getDocuments(caseId)
+    return db.getDocuments(caseId).map(doc => ({ ...doc, integrityStatus: doc.integrityStatus || 'PENDING' }))
   },
 
   /**
@@ -68,6 +69,7 @@ export const documentService = {
    */
   async uploadDocument(user, caseId, file, metadata) {
     if (!hasPermission(user, PERMISSIONS.UPLOAD_DOCUMENTS)) {
+      auditService.recordDenied({ user, action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT, resourceType: 'DOCUMENT', caseId, reason: 'Document upload permission is required.' })
       throw new Error('Access denied: You do not have permission to upload documents.')
     }
     caseService.getCaseById(user, caseId)
@@ -114,6 +116,16 @@ export const documentService = {
 
     // Update document to point to current version V1
     db.updateDocumentCurrentVersion(doc.id, ver.id)
+    db.updateDocumentIntegrity(doc.id, 'VERIFIED', user.id, { versionId: ver.id, mode: 'HASH_RECORDED' })
+    auditService.record({
+      action: AUDIT_ACTIONS.DOCUMENT_UPLOAD,
+      user,
+      resourceType: 'DOCUMENT',
+      resourceId: doc.id,
+      resourceLabel: doc.originalFilename,
+      caseId,
+      details: `Initial document upload created immutable version V1 (${fileHash.slice(0, 12)}…).`,
+    })
 
     return db.getDocumentById(doc.id)
   },
@@ -123,6 +135,7 @@ export const documentService = {
    */
   async createDocumentVersion(user, caseId, documentId, file, changeReason) {
     if (!hasPermission(user, PERMISSIONS.DOCUMENT_VERSION_CREATE) && !hasPermission(user, PERMISSIONS.UPLOAD_DOCUMENTS)) {
+      auditService.recordDenied({ user, action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT, resourceType: 'DOCUMENT_VERSION', resourceId: documentId, reason: 'Document version permission is required.' })
       throw new Error('Access denied: You do not have permission to create document versions.')
     }
     if (!changeReason || !changeReason.trim()) {
@@ -166,6 +179,16 @@ export const documentService = {
 
     // Update document's current version ID
     db.updateDocumentCurrentVersion(doc.id, ver.id)
+    db.updateDocumentIntegrity(doc.id, 'VERIFIED', user.id, { versionId: ver.id, mode: 'HASH_RECORDED' })
+    auditService.record({
+      action: AUDIT_ACTIONS.DOCUMENT_VERSION_CREATED,
+      user,
+      resourceType: 'DOCUMENT_VERSION',
+      resourceId: ver.id,
+      resourceLabel: ver.originalFilename,
+      caseId: doc.caseId,
+      details: `Immutable version V${ver.versionNumber} created: ${ver.changeReason}`,
+    })
 
     return ver
   },
@@ -179,10 +202,13 @@ export const documentService = {
 
     caseService.getCaseById(user, doc.caseId) // Authorization check
     if (!hasPermission(user, PERMISSIONS.DOCUMENT_VERSION_VIEW) && !hasPermission(user, PERMISSIONS.VIEW_DOCUMENTS)) {
+      auditService.recordDenied({ user, action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT, resourceType: 'DOCUMENT_VERSION_HISTORY', resourceId: documentId, caseId: doc.caseId, reason: 'Document version history permission is required.' })
       throw new Error('Access denied: You do not have permission to view document version history.')
     }
 
-    return db.getDocumentVersions(documentId)
+    const versions = db.getDocumentVersions(documentId)
+    auditService.record({ action: AUDIT_ACTIONS.DOCUMENT_VIEW, user, resourceType: 'DOCUMENT_VERSION_HISTORY', resourceId: documentId, resourceLabel: doc.originalFilename, caseId: doc.caseId, details: 'Document version history viewed.' })
+    return versions
   },
 
   /**
@@ -197,6 +223,7 @@ export const documentService = {
     if (!ver || ver.documentId !== documentId) {
       throw new Error('Version not found')
     }
+    auditService.record({ action: AUDIT_ACTIONS.DOCUMENT_VIEW, user, resourceType: 'DOCUMENT_VERSION', resourceId: versionId, resourceLabel: ver.originalFilename, caseId: doc.caseId, details: `Version V${ver.versionNumber} viewed.` })
     return ver
   },
 
@@ -206,6 +233,7 @@ export const documentService = {
    */
   async verifyIntegrity(user, documentId, versionId, file) {
     if (!hasPermission(user, PERMISSIONS.INTEGRITY_VERIFY) && !hasPermission(user, PERMISSIONS.VIEW_DOCUMENTS)) {
+      auditService.recordDenied({ user, action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT, resourceType: 'DOCUMENT', resourceId: documentId, reason: 'Document integrity verification permission is required.' })
       throw new Error('Access denied: You do not have permission to verify document integrity.')
     }
 
@@ -218,7 +246,7 @@ export const documentService = {
 
     if (!file) {
       // Return stored hash status if no new file object is provided for active comparison
-      return {
+      const result = {
         verified: true,
         calculatedHash: ver.fileHash,
         storedHash: ver.fileHash,
@@ -227,15 +255,30 @@ export const documentService = {
         filename: ver.originalFilename,
         mode: 'STORED_HASH_CHECK',
       }
+      db.updateDocumentIntegrity(documentId, 'VERIFIED', user.id, { versionId, mode: result.mode, calculatedHash: result.calculatedHash })
+      auditService.record({ action: AUDIT_ACTIONS.INTEGRITY_VERIFIED, user, resourceType: 'DOCUMENT_VERSION', resourceId: versionId, resourceLabel: ver.originalFilename, caseId: doc.caseId, details: 'Stored SHA-256 hash verified.' })
+      return result
     }
 
     const verification = await cryptoService.verifyFileIntegrity(file, ver.fileHash)
-    return {
+    const result = {
       ...verification,
       versionNumber: ver.versionNumber,
       filename: ver.originalFilename,
       mode: 'ACTIVE_FILE_COMPARE',
     }
+    db.updateDocumentIntegrity(documentId, result.verified ? 'VERIFIED' : 'MISMATCH', user.id, { versionId, mode: result.mode, calculatedHash: result.calculatedHash, storedHash: result.storedHash })
+    auditService.record({
+      action: result.verified ? AUDIT_ACTIONS.INTEGRITY_VERIFIED : AUDIT_ACTIONS.INTEGRITY_MISMATCH,
+      user,
+      resourceType: 'DOCUMENT_VERSION',
+      resourceId: versionId,
+      resourceLabel: ver.originalFilename,
+      caseId: doc.caseId,
+      result: result.verified ? 'SUCCESS' : 'FAILURE',
+      details: result.verified ? 'Uploaded file matches stored SHA-256 hash.' : 'Uploaded file does not match stored SHA-256 hash.',
+    })
+    return result
   },
 
   /**
@@ -248,6 +291,7 @@ export const documentService = {
     caseService.getCaseById(user, doc.caseId)
 
     if (!hasPermission(user, PERMISSIONS.CASE_RECORD_MARK_SUPERSEDED) && !hasPermission(user, PERMISSIONS.UPDATE_CASE_STATUS)) {
+      auditService.recordDenied({ user, action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT, resourceType: 'DOCUMENT', resourceId: documentId, caseId: doc.caseId, reason: 'Higher authority authorization is required to change document status.' })
       throw new Error('Access denied: Higher authority authorization required to mark legal record status.')
     }
 
@@ -255,13 +299,15 @@ export const documentService = {
       throw new Error('A reason is required to change document record status.')
     }
 
-    return db.markDocumentStatus(documentId, status, reason.trim(), user.id)
+    const updated = db.markDocumentStatus(documentId, status, reason.trim(), user.id)
+    auditService.record({ action: AUDIT_ACTIONS.DOCUMENT_STATUS_CHANGED, user, resourceType: 'DOCUMENT', resourceId: documentId, resourceLabel: doc.originalFilename, caseId: doc.caseId, details: `Document status changed to ${status}: ${reason.trim()}` })
+    return updated
   },
 
   /**
    * Get a document by ID with authorization check.
    */
-  getDocument(user, documentId) {
+  getDocument(user, documentId, options = {}) {
     const doc = db.getDocumentById(documentId)
     if (!doc) throw new Error('Document not found')
     caseService.getCaseById(user, doc.caseId) // authorization check
@@ -269,12 +315,24 @@ export const documentService = {
     const currentVersion = doc.currentVersionId ? db.getVersionById(doc.currentVersionId) : null
     const versions = db.getDocumentVersions(documentId)
 
+    if (options.trackView !== false) {
+      auditService.record({ action: AUDIT_ACTIONS.DOCUMENT_VIEW, user, resourceType: 'DOCUMENT', resourceId: documentId, resourceLabel: doc.originalFilename, caseId: doc.caseId, details: 'Document profile viewed.' })
+    }
     return {
       ...doc,
+      integrityStatus: doc.integrityStatus || 'PENDING',
       currentVersion,
       versionCount: versions.length,
       versions,
     }
+  },
+
+  viewDocument(user, documentId) {
+    return this.getDocument(user, documentId)
+  },
+
+  getDocumentSummary(user, documentId) {
+    return this.getDocument(user, documentId, { trackView: false })
   },
 
   /**

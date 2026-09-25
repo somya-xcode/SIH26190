@@ -4,6 +4,8 @@ import {
   Activity, Shield, FileText, AlertCircle, HardDrive, Filter, Clock, CheckCircle2, User
 } from 'lucide-react'
 import { db } from '../../services/mockCaseData'
+import { useAuth } from '../../context/AuthContext'
+import { caseService } from '../../services/caseService'
 import { VersionBadge } from '../shared/StatusBadge'
 
 const TYPE_FILTERS = [
@@ -13,24 +15,28 @@ const TYPE_FILTERS = [
   { id: 'FACT', label: 'Case Facts', icon: AlertCircle },
   { id: 'UPDATE', label: 'Investigation Updates', icon: Activity },
   { id: 'DOCUMENT', label: 'Documents', icon: HardDrive },
+  { id: 'AUDIT', label: 'Security Activity', icon: Shield },
 ]
 
 export function InvestigationHistory({ caseId }) {
+  const { user } = useAuth()
   const [filter, setFilter] = useState('ALL')
   const [events, setEvents] = useState([])
 
   useEffect(() => {
     try {
-      const history = db.getCaseHistory(caseId)
+      const history = caseService.getCaseActivity(user, caseId)
       setEvents(history)
     } catch (err) {
       console.error(err)
     }
-  }, [caseId])
+  }, [caseId, user])
 
   const filteredEvents = filter === 'ALL'
     ? events
-    : events.filter(e => e.type === filter)
+    : events.filter(e => filter === 'DOCUMENT'
+      ? ['DOCUMENT', 'DOCUMENT_VERSION'].includes(e.type)
+      : e.type === filter)
 
   const getEventIcon = (type) => {
     switch (type) {
@@ -39,6 +45,7 @@ export function InvestigationHistory({ caseId }) {
       case 'FACT': return <AlertCircle size={14} color="#d97706" />
       case 'UPDATE': return <Activity size={14} color="#16a34a" />
       case 'DOCUMENT': return <HardDrive size={14} color="#7c3aed" />
+      case 'AUDIT': return <Shield size={14} color="#dc2626" />
       default: return <Clock size={14} color="#64748b" />
     }
   }
@@ -50,6 +57,7 @@ export function InvestigationHistory({ caseId }) {
       case 'FACT': return 'badge-warning'
       case 'UPDATE': return 'badge-success'
       case 'DOCUMENT': return 'badge-purple'
+      case 'AUDIT': return 'badge-danger'
       default: return 'badge-neutral'
     }
   }

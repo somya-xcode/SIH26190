@@ -1,76 +1,37 @@
 import React, { useState } from 'react'
-import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  ShieldCheck, User, ArrowRight, AlertCircle, CheckCircle2,
-  KeyRound, ChevronDown, Briefcase, Menu, X, Scale, FileLock2, Fingerprint, Mail, Search, Award, Shield, Lock
+  ShieldCheck, User, AlertCircle, CheckCircle2, LockKeyhole, FolderKanban, Activity,
+  KeyRound, Menu, X, BriefcaseBusiness, Phone, ArrowLeft, ArrowRight
 } from 'lucide-react'
 import { PasswordInput } from './PasswordInput'
 import { FaceAuthentication } from './FaceAuthentication'
 import { SecurityNotice } from './SecurityNotice'
 import { useAuth } from '../../context/AuthContext'
+import { cases } from '../../services/mockData'
+import { ALL_POSITIONS } from '../../services/accessControl'
 import { authService } from '../../services/authService'
-import { RANKS, getRankAccessLevel, getAccessLevelLabel, getActionTier, ACTION_TIERS, ACCESS_LEVELS } from '../../services/accessControl'
 
 const PUBLIC_LINKS = [
   { id: 'home', label: 'Home' },
   { id: 'about', label: 'About' },
   { id: 'services', label: 'Services' },
-  { id: 'contact', label: 'Contact' },
-]
-
-const RANK_GROUPS = [
-  {
-    category: 'Field & Investigation Ranks',
-    description: 'Assigned case investigation & record entry',
-    items: [
-      { title: RANKS.CONSTABLE, level: ACCESS_LEVELS.FIELD_OFFICER, desc: 'Field officer & evidence collection' },
-      { title: RANKS.HEAD_CONSTABLE, level: ACCESS_LEVELS.FIELD_OFFICER, desc: 'Senior field officer' },
-      { title: RANKS.ASI, level: ACCESS_LEVELS.INVESTIGATION_OFFICER, desc: 'Assistant Sub-Inspector' },
-      { title: RANKS.SI, level: ACCESS_LEVELS.INVESTIGATION_OFFICER, desc: 'Sub-Inspector / Lead Investigator' },
-    ]
-  },
-  {
-    category: 'Station & District Supervision (Case Creation & Management)',
-    description: 'Higher authority — Can open new cases, update status & assign officers',
-    items: [
-      { title: RANKS.INSPECTOR, level: ACCESS_LEVELS.STATION_SUPERVISOR, desc: 'Inspector / Station Supervisor' },
-      { title: RANKS.SHO, level: ACCESS_LEVELS.STATION_SUPERVISOR, desc: 'Station House Officer' },
-      { title: RANKS.ACP, level: ACCESS_LEVELS.DISTRICT_SUPERVISOR, desc: 'Assistant Commissioner of Police' },
-      { title: RANKS.DSP, level: ACCESS_LEVELS.DISTRICT_SUPERVISOR, desc: 'Deputy Superintendent of Police' },
-      { title: RANKS.DCP, level: ACCESS_LEVELS.DISTRICT_SUPERVISOR, desc: 'Deputy Commissioner of Police' },
-      { title: RANKS.SP, level: ACCESS_LEVELS.DISTRICT_SUPERVISOR, desc: 'Superintendent of Police / District Command' },
-    ]
-  },
-  {
-    category: 'Senior Command & Specialized Legal Roles',
-    description: 'Command & Legal Oversight',
-    items: [
-      { title: RANKS.SSP, level: ACCESS_LEVELS.SENIOR_COMMAND, desc: 'Senior Superintendent of Police' },
-      { title: RANKS.DIG, level: ACCESS_LEVELS.SENIOR_COMMAND, desc: 'Deputy Inspector General' },
-      { title: RANKS.IG, level: ACCESS_LEVELS.SENIOR_COMMAND, desc: 'Inspector General' },
-      { title: RANKS.ADG, level: ACCESS_LEVELS.STATE_COMMAND, desc: 'Additional Director General' },
-      { title: RANKS.DGP, level: ACCESS_LEVELS.STATE_COMMAND, desc: 'Director General of Police' },
-      { title: RANKS.LEGAL_OFFICER, level: ACCESS_LEVELS.STATION_SUPERVISOR, desc: 'Legal Officer / Prosecutor' },
-      { title: RANKS.FORENSIC_OFFICER, level: ACCESS_LEVELS.INVESTIGATION_OFFICER, desc: 'Forensic Lab Expert' },
-      { title: RANKS.CYBER_CELL_OFFICER, level: ACCESS_LEVELS.INVESTIGATION_OFFICER, desc: 'Cyber Crime Specialist' },
-      { title: RANKS.SYSTEM_ADMINISTRATOR, level: ACCESS_LEVELS.DISTRICT_SUPERVISOR, desc: 'System IT Administrator' },
-    ]
-  }
 ]
 
 export function LoginPage() {
   const { login } = useAuth()
+  const caseStats = {
+    total: cases.length,
+    completed: cases.filter(item => ['Closed', 'Completed', 'Resolved'].includes(item.status)).length,
+    running: cases.filter(item => ['Active', 'Running', 'Open', 'In Progress'].includes(item.status)).length,
+  }
   const [publicView, setPublicView] = useState('signin')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   // Form states
   const [userId, setUserId] = useState('')
   const [password, setPassword] = useState('')
-  const [selectedPosition, setSelectedPosition] = useState('')
   const [faceVerification, setFaceVerification] = useState(null)
-  const [rankModalOpen, setRankModalOpen] = useState(false)
-  const [rankSearchQuery, setRankSearchQuery] = useState('')
 
   // Feedback states
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -80,24 +41,19 @@ export function LoginPage() {
 
   const [signUpName, setSignUpName] = useState('')
   const [signUpId, setSignUpId] = useState('')
+  const [signUpPosition, setSignUpPosition] = useState('')
+  const [signUpPhone, setSignUpPhone] = useState('')
+  const [signUpOtp, setSignUpOtp] = useState('')
+  const [signUpStep, setSignUpStep] = useState(1)
+  const [signUpFaceVerification, setSignUpFaceVerification] = useState(null)
   const [signUpPassword, setSignUpPassword] = useState('')
   const [signUpConfirm, setSignUpConfirm] = useState('')
-  const [signUpSubmitted, setSignUpSubmitted] = useState(false)
 
   const goToView = (view) => {
     setPublicView(view)
     setMobileNavOpen(false)
     setErrorMessage('')
     setSuccessMessage('')
-  }
-
-  // Populate demo credentials for easy reviewer evaluation
-  const populateDemo = () => {
-    const demo = authService.getDemoCredentials()
-    setUserId(demo.userId)
-    setPassword(demo.password)
-    setSelectedPosition(RANKS.SI)
-    setErrorMessage('')
   }
 
   const handleSubmit = async (e) => {
@@ -116,11 +72,6 @@ export function LoginPage() {
       return
     }
 
-    if (!selectedPosition) {
-      setErrorMessage('Please select your official Position / Rank.')
-      return
-    }
-
     // 2. Strict 2FA Enforcement: Face Verification required before main dashboard entry
     if (!faceVerification || !faceVerification.verified) {
       setErrorMessage('Face authentication required. Please scan your face to complete identity verification.')
@@ -130,9 +81,8 @@ export function LoginPage() {
     setIsSubmitting(true)
 
     try {
-      setSuccessMessage('Verifying credentials & official rank...')
-      // Phase 2 + Phase 3: complete login with strict rank verification
-      await login(userId, password, faceVerification, selectedPosition)
+      setSuccessMessage('Verifying credentials...')
+      await login(userId, password, faceVerification)
     } catch (err) {
       setIsSubmitting(false)
       setErrorMessage(err.message || 'Authentication failed. Please check credentials and biometric verification.')
@@ -142,8 +92,36 @@ export function LoginPage() {
   const handleSignUp = (e) => {
     e?.preventDefault()
     setErrorMessage('')
-    if (!signUpName.trim() || !signUpId.trim() || !signUpPassword || !signUpConfirm) {
-      setErrorMessage('Please complete all required fields.')
+    if (signUpStep === 1) {
+      if (!signUpName.trim() || !signUpId.trim() || !signUpPosition) {
+        setErrorMessage('Please enter your name, username, and police post.')
+        return
+      }
+      if (authService.userExists(signUpId)) {
+        setErrorMessage('That username is already registered. Please choose another username.')
+        return
+      }
+      setSignUpStep(2)
+      return
+    }
+    if (signUpStep === 2) {
+      if (!/^\+?[0-9\s-]{10,15}$/.test(signUpPhone.trim())) {
+        setErrorMessage('Please enter a valid phone number.')
+        return
+      }
+      if (signUpOtp.trim() !== '123456') {
+        setErrorMessage('Invalid OTP. For this demo, enter 123456.')
+        return
+      }
+      setSignUpStep(3)
+      return
+    }
+    if (signUpStep === 3) {
+      if (!signUpFaceVerification?.verified) {
+        setErrorMessage('Please complete face registration before continuing.')
+        return
+      }
+      setSignUpStep(4)
       return
     }
     if (signUpPassword !== signUpConfirm) {
@@ -154,13 +132,33 @@ export function LoginPage() {
       setErrorMessage('Password must be at least 8 characters.')
       return
     }
-    setSignUpSubmitted(true)
-    setSuccessMessage('Access request submitted. A nodal officer will verify your identity before credentials are issued.')
+    try {
+      authService.registerLocalUser({
+        id: signUpId,
+        password: signUpPassword,
+        name: signUpName,
+        phone: signUpPhone,
+        rank: signUpPosition,
+        biometricToken: signUpFaceVerification.biometricToken,
+      })
+    } catch (err) {
+      setErrorMessage(err.message || 'Registration could not be completed.')
+      return
+    }
+    setSuccessMessage('Registration complete. Redirecting to sign in...')
+    window.setTimeout(() => {
+      setSignUpStep(1)
+      setSignUpPassword('')
+      setSignUpConfirm('')
+      setSignUpFaceVerification(null)
+      goToView('signin')
+    }, 1200)
   }
 
-  const selectedRankLevel = selectedPosition ? getRankAccessLevel(selectedPosition) : null
-  const selectedRankLabel = selectedRankLevel ? getAccessLevelLabel(selectedRankLevel) : null
-  const selectedActionTier = selectedPosition ? getActionTier(selectedPosition) : null
+  const goToPreviousSignUpStep = () => {
+    setErrorMessage('')
+    setSignUpStep(step => Math.max(1, step - 1))
+  }
 
   return (
     <div className="login-root">
@@ -168,9 +166,16 @@ export function LoginPage() {
       <div className="login-backdrop-grid" />
 
       <header className="public-nav">
-        <button type="button" className="public-nav-brand" onClick={() => goToView('home')}>
-          <span className="public-nav-mark"><ShieldCheck size={18} /></span>
-          <span>DocGuard</span>
+        <button type="button" className="public-nav-brand" onClick={() => goToView('signin')}>
+          <span className="public-nav-mark">
+            <img src="/images/government-emblem.png" alt="Government of India emblem" />
+          </span>
+          <span className="public-nav-brand-copy">
+            <strong>Ministry of Home Affairs</strong>
+            <small>Government of India</small>
+          </span>
+          <span className="public-nav-divider" aria-hidden="true" />
+          <span className="public-nav-platform">SECURE DIGITAL DOCUMENTATION MANAGEMENT SYSTEM</span>
         </button>
 
         <nav className={`public-nav-links ${mobileNavOpen ? 'open' : ''}`} aria-label="Primary">
@@ -179,7 +184,7 @@ export function LoginPage() {
               key={link.id}
               type="button"
               className={publicView === link.id ? 'active' : ''}
-              onClick={() => goToView(link.id)}
+              onClick={() => goToView(link.id === 'home' ? 'signin' : link.id)}
             >
               {link.label}
             </button>
@@ -219,7 +224,7 @@ export function LoginPage() {
               key={link.id}
               type="button"
               className={publicView === link.id ? 'active' : ''}
-              onClick={() => goToView(link.id)}
+              onClick={() => goToView(link.id === 'home' ? 'signin' : link.id)}
             >
               {link.label}
             </button>
@@ -229,16 +234,51 @@ export function LoginPage() {
         </div>
       )}
 
-      {publicView === 'home' && (
-        <PublicPanel title="Welcome" subtitle="">
-          <div className="public-contact-card">
-            <Mail size={18} />
-            <div>
-              <strong>Nodal IT Cell</strong>
-              <code>sec-officer@docguard.gov.in</code>
-            </div>
+      {publicView === 'about' && (
+        <section className="public-about" aria-labelledby="about-title">
+          <div className="public-about-hero">
+            <span className="public-about-kicker">ABOUT THE SYSTEM</span>
+            <h1 id="about-title">Secure Digital Document Management System</h1>
+            <p>
+              A secure, centralized platform for managing, organizing, and protecting legal and investigation-related documents.
+            </p>
           </div>
-        </PublicPanel>
+
+          <div className="public-about-grid">
+            <article className="public-about-card public-about-card-wide">
+              <span className="public-about-icon"><FolderKanban size={20} /></span>
+              <div>
+                <h2>About the System</h2>
+                <p>
+                  The Secure Digital Document Management System helps authorized police and investigation personnel create, upload, access, organize, and manage case documents through a structured, role-based environment. It reduces dependency on traditional paperwork while improving accessibility, security, and accountability.
+                </p>
+              </div>
+            </article>
+            <article className="public-about-card">
+              <span className="public-about-icon"><ShieldCheck size={20} /></span>
+              <h2>Our Mission</h2>
+              <p>
+                To provide a secure, efficient, and transparent digital ecosystem where confidential investigation documents are accessible only to authorized personnel according to their roles and responsibilities.
+              </p>
+            </article>
+            <article className="public-about-card">
+              <span className="public-about-icon"><LockKeyhole size={20} /></span>
+              <h2>Why It Matters</h2>
+              <p>
+                Legal and investigation processes involve sensitive information requiring confidentiality, integrity, and controlled access. This platform brings structure, security, and accountability to digital documentation.
+              </p>
+            </article>
+            <article className="public-about-card public-about-card-wide">
+              <span className="public-about-icon"><Activity size={20} /></span>
+              <div>
+                <h2>Our Vision</h2>
+                <p>
+                  To build trusted digital infrastructure for law enforcement and investigation teams, enabling sensitive documents to be managed securely and efficiently with transparency, accountability, and controlled access.
+                </p>
+              </div>
+            </article>
+          </div>
+        </section>
       )}
 
       <main className="login-shell" role="main">
@@ -261,39 +301,60 @@ export function LoginPage() {
                   <span>{errorMessage}</span>
                 </div>
               )}
-              {signUpSubmitted && successMessage && (
+              {successMessage && (
                 <div className="auth-alert success" role="status">
                   <CheckCircle2 size={18} />
                   <span>{successMessage}</span>
                 </div>
               )}
-              <form onSubmit={handleSignUp} className="login-form" noValidate>
-                <div className="form-group">
-                  <label htmlFor="signup-name">Full name <span className="req">*</span></label>
-                  <div className="auth-input-wrapper">
-                    <User className="input-icon left-icon" size={18} aria-hidden="true" />
-                    <input id="signup-name" className="auth-input" value={signUpName} onChange={(e) => setSignUpName(e.target.value)} placeholder="Enter your full name" />
-                  </div>
+              <div className="signup-step-indicator" aria-label={`Registration step ${signUpStep} of 4`}>
+                {[1, 2, 3, 4].map(step => <span className={signUpStep >= step ? 'active' : ''} key={step}>{step}</span>)}
+              </div>
+              <form onSubmit={handleSignUp} className="login-form signup-flow" noValidate>
+                {signUpStep === 1 && (
+                  <>
+                    <div className="signup-step-heading"><span>Step 1 of 4</span><h3>Basic details</h3><p>Tell us who is requesting access.</p></div>
+                    <div className="form-group">
+                      <label htmlFor="signup-name">Full name <span className="req">*</span></label>
+                      <div className="auth-input-wrapper"><User className="input-icon left-icon" size={18} aria-hidden="true" /><input id="signup-name" className="auth-input" value={signUpName} onChange={(e) => setSignUpName(e.target.value)} placeholder="Enter your full name" autoComplete="name" /></div>
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="signup-id">Username <span className="req">*</span></label>
+                      <div className="auth-input-wrapper"><User className="input-icon left-icon" size={18} aria-hidden="true" /><input id="signup-id" className="auth-input" value={signUpId} onChange={(e) => setSignUpId(e.target.value)} placeholder="Create your username" autoComplete="username" /></div>
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="signup-position">Police post / position <span className="req">*</span></label>
+                      <select id="signup-position" className="auth-input auth-select" value={signUpPosition} onChange={(e) => setSignUpPosition(e.target.value)} required>
+                        <option value="">Select your current post</option>
+                        {ALL_POSITIONS.map(position => <option value={position} key={position}>{position}</option>)}
+                      </select>
+                    </div>
+                  </>
+                )}
+                {signUpStep === 2 && (
+                  <>
+                    <div className="signup-step-heading"><span>Step 2 of 4</span><h3>Verify phone number</h3><p>Enter your phone number and confirm the OTP sent to you.</p></div>
+                    <div className="form-group"><label htmlFor="signup-phone">Phone number <span className="req">*</span></label><div className="auth-input-wrapper"><Phone className="input-icon left-icon" size={18} aria-hidden="true" /><input id="signup-phone" className="auth-input" value={signUpPhone} onChange={(e) => setSignUpPhone(e.target.value)} placeholder="Enter your phone number" inputMode="tel" autoComplete="tel" /></div></div>
+                    <div className="form-group"><label htmlFor="signup-otp">OTP confirmation <span className="req">*</span></label><input id="signup-otp" className="auth-input signup-otp-input" value={signUpOtp} onChange={(e) => setSignUpOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Enter 6-digit OTP" inputMode="numeric" autoComplete="one-time-code" maxLength={6} /><small className="signup-demo-hint">Demo OTP: 123456</small></div>
+                  </>
+                )}
+                {signUpStep === 3 && (
+                  <>
+                    <div className="signup-step-heading"><span>Step 3 of 4</span><h3>Register your face</h3><p>Complete face registration before creating your password.</p></div>
+                    <FaceAuthentication userId={signUpId} registrationMode verificationResult={signUpFaceVerification} onVerificationComplete={setSignUpFaceVerification} />
+                  </>
+                )}
+                {signUpStep === 4 && (
+                  <>
+                    <div className="signup-step-heading"><span>Step 4 of 4</span><h3>Create your password</h3><p>Choose a password to complete registration.</p></div>
+                    <div className="form-group"><label htmlFor="signup-password">Password <span className="req">*</span></label><PasswordInput id="signup-password" value={signUpPassword} onChange={(e) => setSignUpPassword(e.target.value)} autoComplete="new-password" /></div>
+                    <div className="form-group"><label htmlFor="signup-confirm">Re-enter password <span className="req">*</span></label><PasswordInput id="signup-confirm" value={signUpConfirm} onChange={(e) => setSignUpConfirm(e.target.value)} autoComplete="new-password" /></div>
+                  </>
+                )}
+                <div className="signup-flow-actions">
+                  {signUpStep > 1 && <button type="button" className="button secondary" onClick={goToPreviousSignUpStep}><ArrowLeft size={16} /> Back</button>}
+                  <button type="submit" className="button primary login-submit-btn">{signUpStep === 4 ? 'Complete registration' : <>Continue <ArrowRight size={16} /></>}</button>
                 </div>
-                <div className="form-group">
-                  <label htmlFor="signup-id">Requested User ID <span className="req">*</span></label>
-                  <div className="auth-input-wrapper">
-                    <User className="input-icon left-icon" size={18} aria-hidden="true" />
-                    <input id="signup-id" className="auth-input" value={signUpId} onChange={(e) => setSignUpId(e.target.value)} placeholder="e.g. officer.id" />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label htmlFor="signup-password">Password <span className="req">*</span></label>
-                  <PasswordInput id="signup-password" value={signUpPassword} onChange={(e) => setSignUpPassword(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="signup-confirm">Confirm password <span className="req">*</span></label>
-                  <PasswordInput id="signup-confirm" value={signUpConfirm} onChange={(e) => setSignUpConfirm(e.target.value)} />
-                </div>
-                <button type="submit" className="button primary login-submit-btn">
-                  Submit access request
-                  <ArrowRight size={17} />
-                </button>
                 <p className="signup-switch">
                   Already have an account?{' '}
                   <button type="button" className="text-link-btn" onClick={() => goToView('signin')}>Sign in</button>
@@ -312,10 +373,9 @@ export function LoginPage() {
               transition={{ duration: 0.35 }}
             >
               <div className="brand-mark-login">
-                <ShieldCheck size={28} />
+                <img src="/images/government-emblem.png" alt="Government of India emblem" />
               </div>
-              <h1>DocGuard</h1>
-              <p className="brand-tagline">Secure · Legal · Trusted</p>
+              <h1>SECURE DIGITAL DOCUMENTATION MANAGEMENT SYSTEM</h1>
             </motion.div>
 
             <div className="login-headings">
@@ -330,22 +390,6 @@ export function LoginPage() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               transition={{ duration: 0.3 }}
             >
-              {/* Quick Demo Pre-fill Banner */}
-              <div className="demo-credentials-banner">
-                <div>
-                  <span className="demo-badge">Demo Mode</span>
-                  <small>Testing officer: <code>demo.investigator</code> | <code>Demo@12345</code></small>
-                </div>
-                <button
-                  type="button"
-                  className="fill-demo-btn"
-                  onClick={populateDemo}
-                  title="Click to automatically fill demo officer credentials"
-                >
-                  Fill Demo ID
-                </button>
-              </div>
-
               {/* Feedback Messages */}
               <AnimatePresence>
                 {errorMessage && (
@@ -377,11 +421,10 @@ export function LoginPage() {
 
               <form onSubmit={handleSubmit} noValidate className="login-form">
                 <div className="login-grid-landscape">
-                  {/* COLUMN 1: FACTOR 1 CREDENTIALS & ACCESS ACTION */}
+                  {/* Credentials and access action */}
                   <div className="login-col-credentials">
                     <div className="auth-form-section">
                       <div className="section-header">
-                        <span className="factor-pill">Factor 1</span>
                         <h4>Officer Credentials</h4>
                       </div>
 
@@ -434,60 +477,6 @@ export function LoginPage() {
                         />
                       </div>
 
-                      {/* ATTRACTIVE POSITION / RANK SELECTOR FEATURE */}
-                      <div className="form-group">
-                        <label>
-                          Official Position / Rank <span className="req">*</span>
-                        </label>
-
-                        <div
-                          className={`attractive-rank-trigger ${selectedPosition ? 'selected' : ''}`}
-                          onClick={() => setRankModalOpen(true)}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <div className="rank-badge-icon">
-                              <Award size={20} color="#2563eb" />
-                            </div>
-                            <div style={{ textAlign: 'left' }}>
-                              {selectedPosition ? (
-                                <>
-                                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
-                                    {selectedPosition}
-                                  </div>
-                                  <div style={{ fontSize: 11, color: '#475569', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                    <span>Level {selectedRankLevel} · {selectedRankLabel}</span>
-                                    <span style={{
-                                      padding: '1px 6px',
-                                      borderRadius: 4,
-                                      fontWeight: 700,
-                                      fontSize: 10,
-                                      background: selectedActionTier === ACTION_TIERS.HIGHER_AUTHORITY ? '#e0e7ff' : selectedActionTier === ACTION_TIERS.CREATE ? '#dcfce7' : '#f1f5f9',
-                                      color: selectedActionTier === ACTION_TIERS.HIGHER_AUTHORITY ? '#3730a3' : selectedActionTier === ACTION_TIERS.CREATE ? '#166534' : '#475569',
-                                    }}>
-                                      ⚡ {selectedActionTier}
-                                    </span>
-                                  </div>
-                                </>
-                              ) : (
-                                <>
-                                  <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b' }}>
-                                    Select Your Official Rank / Position ▼
-                                  </div>
-                                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                                    Strict Security: Selected rank must match your registered record
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          <ChevronDown size={18} color="#64748b" />
-                        </div>
-
-                        <small className="position-security-note" style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, fontSize: 11, color: '#64748b' }}>
-                          <ShieldCheck size={12} color="#2563eb" />
-                          Strict Enforcement: Selection is verified against DB. Selecting the wrong rank will block authentication.
-                        </small>
-                      </div>
                     </div>
 
                     {/* Submission CTA */}
@@ -501,7 +490,6 @@ export function LoginPage() {
                       ) : (
                         <>
                           Sign In to Secure Workspace
-                          <ArrowRight size={17} />
                         </>
                       )}
                     </button>
@@ -510,11 +498,10 @@ export function LoginPage() {
                     <SecurityNotice />
                   </div>
 
-                  {/* COLUMN 2: FACTOR 2 BIOMETRIC FACE AUTHENTICATION */}
+                  {/* Biometric face authentication */}
                   <div className="login-col-biometrics">
                     <div className="auth-form-section biometrics-section">
                       <div className="section-header">
-                        <span className="factor-pill">Factor 2</span>
                         <h4>Biometric Verification</h4>
                       </div>
 
@@ -538,16 +525,26 @@ export function LoginPage() {
         )}
 
         <footer className="login-footer">
-          <p>
-            SIH Problem Statement 26190 · Secure Digital Document Management System for Legal &amp; Investigation Documents
-          </p>
-          <em>Justice backed by integrity.</em>
+          <div className="login-case-stats" aria-label="Case statistics">
+            <div className="login-case-stat">
+              <BriefcaseBusiness size={17} />
+              <span><strong>{caseStats.total}</strong><small>Total Cases</small></span>
+            </div>
+            <div className="login-case-stat completed">
+              <CheckCircle2 size={17} />
+              <span><strong>{caseStats.completed}</strong><small>Completed</small></span>
+            </div>
+            <div className="login-case-stat running">
+              <Activity size={17} />
+              <span><strong>{caseStats.running}</strong><small>Currently Running</small></span>
+            </div>
+          </div>
         </footer>
       </div> {/* close login-inner */}
     </main>
 
       {/* ATTRACTIVE RANK SELECTION MODAL — RENDERED VIA PORTAL TO BODY FOR ABSOLUTE OPAQUE OVERLAY & TOP Z-INDEX */}
-      {typeof document !== 'undefined' && createPortal(
+      {false && (
         <AnimatePresence>
           {rankModalOpen && (
             <div
@@ -762,21 +759,6 @@ export function LoginPage() {
         )}
       </AnimatePresence>
     </div>
-  )
-}
-
-function PublicPanel({ title, subtitle, children }) {
-  return (
-    <motion.section
-      className="public-panel"
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.28 }}
-    >
-      <h2>{title}</h2>
-      <p>{subtitle}</p>
-      {children}
-    </motion.section>
   )
 }
 

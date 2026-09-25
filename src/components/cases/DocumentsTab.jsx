@@ -275,7 +275,7 @@ export function DocumentsTab({ caseId, notify }) {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 14 }}>
           {documents.map(doc => {
-            const docDetails = documentService.getDocument(user, doc.id)
+            const docDetails = documentService.getDocumentSummary(user, doc.id)
             const uploader = db.getUserById(doc.uploadedBy)
             const currentVer = docDetails.currentVersion
             const versionCount = docDetails.versionCount
@@ -301,6 +301,7 @@ export function DocumentsTab({ caseId, notify }) {
                       </span>
                       <VersionBadge version={currentVer?.versionNumber || 1} />
                       <RecordStatusBadge status={doc.status} />
+                      <IntegrityBadge verified={doc.integrityStatus === 'VERIFIED'} />
                     </div>
                     <SensitivityBadge sensitivity={doc.classification} />
                   </div>
@@ -319,7 +320,9 @@ export function DocumentsTab({ caseId, notify }) {
                     <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0', marginBottom: 10, fontSize: 11 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', marginBottom: 2 }}>
                         <span>Current SHA-256 Hash (V{currentVer.versionNumber})</span>
-                        <span style={{ color: '#059669', fontWeight: 600 }}>✓ Recorded</span>
+                        <span style={{ color: doc.integrityStatus === 'MISMATCH' ? '#dc2626' : '#059669', fontWeight: 600 }}>
+                          {doc.integrityStatus === 'MISMATCH' ? '⚠ Mismatch' : `✓ ${doc.integrityStatus || 'PENDING'}`}
+                        </span>
                       </div>
                       <code style={{ fontSize: 10, color: '#1e293b', wordBreak: 'break-all', display: 'block' }}>
                         {currentVer.fileHash}
@@ -409,6 +412,7 @@ export function DocumentsTab({ caseId, notify }) {
                 <div><strong>Document Type:</strong> {previewDoc.documentType}</div>
                 <div><strong>Current Version:</strong> <VersionBadge version={documentService.getDocument(user, previewDoc.id).currentVersion?.versionNumber || 1} /></div>
                 <div><strong>Record Status:</strong> <RecordStatusBadge status={previewDoc.status} /></div>
+                <div><strong>Integrity Status:</strong> <IntegrityBadge verified={previewDoc.integrityStatus === 'VERIFIED'} /></div>
                 <div><strong>Classification:</strong> <SensitivityBadge sensitivity={previewDoc.classification} /></div>
                 <div><strong>MIME Type:</strong> {previewDoc.mimeType} ({documentService.getFileTypeLabel(previewDoc.mimeType)})</div>
                 <div><strong>File Size:</strong> {documentService.formatFileSize(previewDoc.fileSize)}</div>

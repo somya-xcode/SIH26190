@@ -15,12 +15,22 @@ import { LoginPage } from './components/auth/LoginPage'
 import { CasesPage as Phase2CasesPage } from './components/cases/CasesPage'
 import { CreateCasePage } from './components/cases/CreateCasePage'
 import { CaseDetailPage } from './components/cases/CaseDetailPage'
+import { SecurityDashboardPage } from './components/security/SecurityDashboardPage'
 import { hasPermission, PERMISSIONS, canCreateCase, getActionTier, ACTION_TIERS } from './services/accessControl'
+import { auditService, AUDIT_ACTIONS } from './services/auditService'
 
 const nav = [
   ['Dashboard', Grid2X2], ['Documents', FileText], ['Upload', Upload], ['Search', Search],
   ['Cases', BriefcaseBusiness], ['Shared with Me', Users], ['Audit Log', Archive], ['Users', UserPlus], ['Settings', Settings],
 ]
+const navPermission = {
+  Documents: PERMISSIONS.VIEW_DOCUMENTS,
+  Upload: PERMISSIONS.UPLOAD_DOCUMENTS,
+  Search: PERMISSIONS.SEARCH_CASE_RECORDS,
+  'Shared with Me': PERMISSIONS.VIEW_DOCUMENTS,
+  'Audit Log': PERMISSIONS.VIEW_AUDIT_LOG,
+  Users: PERMISSIONS.MANAGE_USERS,
+}
 const typeStyle = { PDF: 'pdf', Image: 'image', Document: 'document', Video: 'video' }
 
 function IconButton({ label, children, className = '', onClick }) { return <button className={`icon-button ${className}`} onClick={onClick} aria-label={label}>{children}</button> }
@@ -31,7 +41,11 @@ function Toast({ toast, clear }) { return <AnimatePresence>{toast && <motion.div
 
 function ConfirmDialog({ open, onClose, onConfirm, documentName }) { return <AnimatePresence>{open && <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><motion.div className="modal" initial={{ scale: .97, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: .97, y: 10 }} role="dialog" aria-modal="true" aria-labelledby="confirm-title"><div className="modal-icon warning"><AlertCircle /></div><h2 id="confirm-title">Delete document?</h2><p><strong>{documentName}</strong> will be permanently removed from the workspace. This cannot be undone.</p><div className="modal-actions"><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="danger" onClick={onConfirm}>Delete document</Button></div></motion.div></motion.div>}</AnimatePresence> }
 
-function Sidebar({ active, setActive, open, setOpen, onSelectNav }) { return <aside className={`sidebar ${open ? 'open' : ''}`}><div className="brand"><span className="brand-mark"><ShieldCheck /></span><div><b>DocGuard</b><small>Secure · Legal · Trusted</small></div></div><nav>{nav.map(([name, Icon]) => <button key={name} className={`nav-item ${active === name ? 'active' : ''}`} onClick={() => { onSelectNav ? onSelectNav(name) : setActive(name); setOpen(false) }}><Icon size={20}/><span>{name}</span></button>)}</nav><div className="sidebar-footer"><div></div><em>Justice backed<br/>by integrity.</em></div></aside> }
+function Sidebar({ active, setActive, open, setOpen, onSelectNav, user }) {
+  const canSeeCases = [PERMISSIONS.VIEW_ASSIGNED_CASES, PERMISSIONS.VIEW_STATION_CASES, PERMISSIONS.VIEW_DISTRICT_CASES, PERMISSIONS.VIEW_STATE_CASES, PERMISSIONS.VIEW_LEGAL_CASES, PERMISSIONS.VIEW_FORENSIC_EVIDENCE, PERMISSIONS.VIEW_CYBER_CASES].some(permission => hasPermission(user, permission))
+  const visibleNav = nav.filter(([name]) => name === 'Dashboard' || name === 'Settings' || name === 'Cases' ? (name === 'Cases' ? canSeeCases : true) : hasPermission(user, navPermission[name]))
+  return <aside className={`sidebar ${open ? 'open' : ''}`}><div className="brand"><span className="brand-mark"><img src="/images/government-emblem.png" alt="Government of India emblem" /></span><div><b>Ministry of Home Affairs</b><small>Government of India</small><em>Secure Digital Documentation Management System</em></div></div><nav>{visibleNav.map(([name, Icon]) => <button key={name} className={`nav-item ${active === name ? 'active' : ''}`} onClick={() => { onSelectNav ? onSelectNav(name) : setActive(name); setOpen(false) }}><Icon size={20}/><span>{name}</span></button>)}</nav><div className="sidebar-footer"><div></div></div></aside>
+}
 
 function Header({ menu, setMenu, setActive, user, onSignOut }) { const [profileOpen, setProfileOpen] = useState(false); const searchRef = useRef(); useEffect(() => { const shortcut = e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); searchRef.current?.focus() } }; window.addEventListener('keydown', shortcut); return () => window.removeEventListener('keydown', shortcut) }, []); const userName = user?.name || 'Pranshu Kumar'; const userRole = user?.rank || user?.role || 'Investigation Officer'; const userInitials = user?.initials || userName.split(' ').map(x => x[0]).join('').slice(0, 2); return <header className="topbar"><IconButton label="Open navigation" className="mobile-menu" onClick={menu}><Menu/></IconButton><label className="global-search"><Search size={19}/><input ref={searchRef} placeholder="Search documents, cases, or keywords..." onKeyDown={e => e.key === 'Enter' && setActive('Search')}/><kbd>Ctrl&nbsp; K</kbd></label><div className="header-actions"><IconButton label="Notifications" className="notification"><Bell size={21}/><i/></IconButton><div className="profile-wrap"><button className="profile" onClick={() => setProfileOpen(!profileOpen)} aria-expanded={profileOpen}><span className="avatar">{userInitials}</span><span className="profile-copy"><b>{userName}</b><small>{userRole}</small></span><ChevronDown size={16}/></button>{profileOpen && <div className="profile-menu"><button onClick={() => { setProfileOpen(false); setActive('Settings'); }}><UserPlus size={16}/> View profile</button><button onClick={() => { setProfileOpen(false); setActive('Settings'); }}><Settings size={16}/> Preferences</button><button onClick={() => { setProfileOpen(false); onSignOut?.(); }}><LogOut size={16}/> Sign out</button></div>}</div></div></header> }
 
@@ -49,9 +63,11 @@ function QuickActions({ setActive, onCreateCase, user }) {
   const quick = []
   if (canUpload) quick.push([Upload, 'Upload Document', () => setActive('Upload')])
   if (canCreate) quick.push([FolderKanban, 'Create New Case', () => { setActive('Cases'); onCreateCase?.(); }])
-  quick.push([Search, 'Search Documents', () => setActive('Search')])
-  quick.push([BriefcaseBusiness, 'View Cases', () => setActive('Cases')])
-  quick.push([Share2, 'Share a File', () => setActive('Shared with Me')])
+  if (hasPermission(user, PERMISSIONS.SEARCH_CASE_RECORDS)) quick.push([Search, 'Search Documents', () => setActive('Search')])
+  if ([PERMISSIONS.VIEW_ASSIGNED_CASES, PERMISSIONS.VIEW_STATION_CASES, PERMISSIONS.VIEW_DISTRICT_CASES, PERMISSIONS.VIEW_STATE_CASES].some(permission => hasPermission(user, permission))) {
+    quick.push([BriefcaseBusiness, 'View Cases', () => setActive('Cases')])
+  }
+  if (hasPermission(user, PERMISSIONS.VIEW_DOCUMENTS)) quick.push([Share2, 'Share a File', () => setActive('Shared with Me')])
 
   return (
     <section className="panel quick-actions">
@@ -69,13 +85,19 @@ function QuickActions({ setActive, onCreateCase, user }) {
 
 function SecurityCard() { return <section className="security-card"><span className="round-icon green"><ShieldCheck size={27}/></span><div><b>Your Data is Protected</b><p>End-to-end encryption<br/>Blockchain verified logs<br/>Access controlled & monitored</p></div><ChevronRight size={17}/></section> }
 
-function RowMenu({ doc, onDelete, notify, onView }) { const [open, setOpen] = useState(false); return <div className="row-menu"><IconButton label={`Actions for ${doc.name}`} onClick={() => setOpen(!open)}><MoreHorizontal size={19}/></IconButton>{open && <div className="dropdown"><button onClick={() => { onView?.(doc); notify('success', 'Document opened', `${doc.name} opened in secure preview.`) }}><Eye/> View</button><button onClick={() => notify('success', 'Download prepared', 'A secure download is being prepared.')}><Download/> Download</button><button onClick={() => notify('success', 'Sharing enabled', 'A secure sharing link has been created.')}><Share2/> Share</button><button onClick={() => notify('success', 'Integrity verified', 'The file hash matches its audit record.')}><ShieldCheck/> Verify Integrity</button><button className="danger-text" onClick={() => onDelete(doc)}><Trash2/> Delete</button></div>}</div> }
+function RowMenu({ doc, onDelete, notify, onView }) {
+  const { user } = useAuth()
+  const [open, setOpen] = useState(false)
+  const record = (action, details) => auditService.record({ action, user, resourceType: 'DOCUMENT', resourceId: doc.id, resourceLabel: doc.name, details })
+  return <div className="row-menu"><IconButton label={`Actions for ${doc.name}`} onClick={() => setOpen(!open)}><MoreHorizontal size={19}/></IconButton>{open && <div className="dropdown"><button onClick={() => { record(AUDIT_ACTIONS.DOCUMENT_VIEW, 'Document opened from workspace list.'); onView?.(doc); notify('success', 'Document opened', `${doc.name} opened in secure preview.`) }}><Eye/> View</button><button onClick={() => { record(AUDIT_ACTIONS.DOCUMENT_DOWNLOAD, 'Secure download requested.'); notify('success', 'Download prepared', 'A secure download is being prepared.') }}><Download/> Download</button><button onClick={() => { record(AUDIT_ACTIONS.DOCUMENT_SHARED, 'Secure sharing link requested.'); notify('success', 'Sharing enabled', 'A secure sharing link has been created.') }}><Share2/> Share</button><button onClick={() => notify('success', 'Integrity verified', 'The file hash matches its audit record.')}><ShieldCheck/> Verify Integrity</button><button className="danger-text" onClick={() => onDelete(doc)}><Trash2/> Delete</button></div>}</div>
+}
 
 function DocumentTable({ docs = documents, onDelete, notify, onView, title = 'Recent Documents', showViewAll = true }) { return <section className="panel documents-panel"><div className="panel-heading"><h2>{title}</h2>{showViewAll && <button>View all</button>}</div><div className="table-wrap"><table><thead><tr><th>Name</th><th>Case</th><th>Type</th><th>Uploaded On</th><th className="actions-head">Actions</th></tr></thead><tbody>{docs.map(doc => <tr key={doc.id}><td><span className="file-name">{doc.type === 'PDF' ? <FileText/> : doc.type === 'Image' ? <FileImage/> : doc.type === 'Video' ? <FileVideo/> : <File/>}{doc.name}</span></td><td className="muted">{doc.case}</td><td><TypeBadge type={doc.type}/></td><td className="muted">{doc.uploaded}</td><td><RowMenu doc={doc} onDelete={onDelete} notify={notify} onView={onView}/></td></tr>)}</tbody></table></div></section> }
 
 function Dashboard({ setActive, notify, onDelete, user, onCreateCase }) {
   const firstName = user?.name?.split(' ')[0] || 'Pranshu'
   const canUpload = hasPermission(user, PERMISSIONS.UPLOAD_DOCUMENTS)
+  const canViewDocuments = hasPermission(user, PERMISSIONS.VIEW_DOCUMENTS)
 
   return (
     <div className="page dashboard-page">
@@ -108,7 +130,9 @@ function Dashboard({ setActive, notify, onDelete, user, onCreateCase }) {
               </section>
             )}
           </section>
-          <DocumentTable onDelete={onDelete} notify={notify} onView={() => setActive('Document Detail')}/>
+          {canViewDocuments ? <DocumentTable onDelete={onDelete} notify={notify} onView={() => setActive('Document Detail')}/> : (
+            <section className="panel documents-panel"><div className="panel-heading"><h2>Document workspace</h2></div><p className="muted">Document content access is not granted for this account by default.</p></section>
+          )}
         </main>
         <aside className="dashboard-side">
           <ActivityCard/>
@@ -301,7 +325,7 @@ function SearchPage({ notify, onDelete, setActive }) { const [query, setQuery] =
 
 function UsersPage({ notify }) { return <div className="page"><PageHeader title="Users & Access" text="Manage users, role-based access, and account status." action={<Button onClick={() => notify('success', 'Invite ready', 'An invitation form would open here.')}><UserPlus size={17}/> Add user</Button>}/><section className="panel users-panel"><div className="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Department</th><th>Access level</th><th>Status</th><th>Last active</th><th></th></tr></thead><tbody>{users.map(u => <tr key={u.name}><td><span className="user-cell"><span className="avatar small-avatar">{u.initials}</span><b>{u.name}</b></span></td><td>{u.role}</td><td className="muted">{u.department}</td><td><TypeBadge type={u.access}/></td><td><span className={`status ${u.status.toLowerCase()}`}>{u.status}</span></td><td className="muted">{u.lastActive}</td><td><IconButton label={`Manage ${u.name}`}><MoreHorizontal size={19}/></IconButton></td></tr>)}</tbody></table></div></section></div> }
 
-function SettingsPage({ notify }) { const settings = [['Profile', 'Personal information and assigned role', UserPlus], ['Security', 'Password, multi-factor authentication, and sessions', LockKeyhole], ['Notification Preferences', 'Choose when you are notified', Bell], ['Access Control', 'Default collaboration permissions', KeyRound], ['Audit Settings', 'Log retention and verification', Archive], ['System Preferences', 'Language, date, and workspace settings', SlidersHorizontal]]; return <div className="page narrow-page"><PageHeader title="Settings" text="Control your DocGuard workspace and security preferences."/>{settings.map(([title, text, Icon]) => <motion.button className="settings-item" key={title} whileHover={{ y: -2 }} onClick={() => notify('success', `${title} selected`, 'This setting panel is ready to connect to your API.')}><span className="round-icon blue"><Icon size={20}/></span><span><b>{title}</b><small>{text}</small></span><ChevronRight size={18}/></motion.button>)}</div> }
+function SettingsPage({ notify }) { const settings = [['Profile', 'Personal information and assigned role', UserPlus], ['Security', 'Password, multi-factor authentication, and sessions', LockKeyhole], ['Notification Preferences', 'Choose when you are notified', Bell], ['Access Control', 'Default collaboration permissions', KeyRound], ['Audit Settings', 'Log retention and verification', Archive], ['System Preferences', 'Language, date, and workspace settings', SlidersHorizontal]]; return <div className="page narrow-page"><PageHeader title="Settings" text="Control your Secure Digital Documentation Management System workspace and security preferences."/>{settings.map(([title, text, Icon]) => <motion.button className="settings-item" key={title} whileHover={{ y: -2 }} onClick={() => notify('success', `${title} selected`, 'This setting panel is ready to connect to your API.')}><span className="round-icon blue"><Icon size={20}/></span><span><b>{title}</b><small>{text}</small></span><ChevronRight size={18}/></motion.button>)}</div> }
 
 function PlaceholderPage({ title }) { return <div className="page narrow-page"><PageHeader title={title} text="A tailored secure workspace view for your assigned records."/><section className="empty-state"><span className="round-icon blue"><FileArchive size={28}/></span><h2>Nothing here yet</h2><p>This frontend state is ready to receive data from your secure backend service.</p><Button>Explore documents</Button></section></div> }
 
@@ -329,7 +353,8 @@ function DashboardShell() {
 
   const deleteDoc = doc => setConfirm(doc)
   const confirmDelete = () => {
-    notify('success', 'Document deleted', `${confirm.name} has been removed from this demonstration list.`)
+    auditService.recordDenied({ user, action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT, resourceType: 'DOCUMENT', resourceLabel: confirm.name, reason: 'Physical deletion of legal documents is forbidden; records are preserved through status changes and new versions.' })
+    notify('error', 'Deletion blocked', 'Legal documents are immutable. Use a status change or create a new version instead.')
     setConfirm(null)
   }
 
@@ -395,7 +420,7 @@ function DashboardShell() {
     Search: <SearchPage notify={notify} onDelete={deleteDoc} setActive={setActive}/>,
     Cases: renderCasesView(),
     'Shared with Me': <PlaceholderPage title="Shared with Me"/>,
-    'Audit Log': <AuditPage/>,
+    'Audit Log': <SecurityDashboardPage/>,
     Users: <UsersPage notify={notify}/>,
     Settings: <SettingsPage notify={notify}/>,
     'Document Detail': <DocumentDetail notify={notify} setActive={setActive}/>,
@@ -409,6 +434,7 @@ function DashboardShell() {
         open={menu}
         setOpen={setMenu}
         onSelectNav={handleNavSelect}
+        user={user}
       />
       {menu && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMenu(false)}/>}
       <div className="content">
@@ -440,7 +466,7 @@ function MainRouter() {
           <div className="brand-mark-login" style={{ margin: '0 auto 16px' }}>
             <ShieldCheck size={28} />
           </div>
-          <p style={{ color: '#8da4c4', fontSize: 13 }}>Verifying DocGuard Security Session...</p>
+          <p style={{ color: '#8da4c4', fontSize: 13 }}>Verifying Secure Documentation Security Session...</p>
         </div>
       </div>
     )

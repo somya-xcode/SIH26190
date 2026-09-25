@@ -4,6 +4,7 @@ import { Plus, Activity, Shield, Clock, AlertCircle, Tag } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { db } from '../../services/mockCaseData'
 import { hasPermission, PERMISSIONS } from '../../services/accessControl'
+import { caseService } from '../../services/caseService'
 import { ImmutableBadge, SensitivityBadge } from '../shared/StatusBadge'
 
 const UPDATE_TYPES = [
@@ -45,12 +46,10 @@ export function UpdatesTab({ caseId, notify }) {
     if (!formData.updateText.trim()) return
 
     try {
-      db.addUpdate({
-        caseId,
+      caseService.addInvestigationUpdate(user, caseId, {
         updateType: formData.updateType,
         classification: formData.classification,
         updateText: formData.updateText.trim(),
-        addedBy: user.id,
       })
       reload()
       setShowAddForm(false)

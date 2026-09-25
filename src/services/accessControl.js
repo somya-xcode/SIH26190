@@ -121,6 +121,17 @@ export function getActionTier(rank) {
  * Returns standard permissions array for a given rank according to its action tier.
  */
 export function getPermissionsForRank(rank) {
+  if (rank === RANKS.SYSTEM_ADMINISTRATOR) {
+    return [
+      PERMISSIONS.MANAGE_USERS,
+      PERMISSIONS.MANAGE_ROLES,
+      PERMISSIONS.SYSTEM_CONFIGURATION,
+      PERMISSIONS.VIEW_TECHNICAL_LOGS,
+      PERMISSIONS.VIEW_AUDIT_LOG,
+      PERMISSIONS.EXPORT_AUDIT_LOG,
+    ]
+  }
+
   const tier = getActionTier(rank)
   const basePermissions = [
     PERMISSIONS.VIEW_ASSIGNED_CASES,
@@ -131,8 +142,64 @@ export function getPermissionsForRank(rank) {
     PERMISSIONS.SEARCH_CASE_RECORDS,
   ]
 
-  if (tier === ACTION_TIERS.INVESTIGATION_RECORD) {
-    return basePermissions
+  if (rank === RANKS.CONSTABLE || rank === RANKS.HEAD_CONSTABLE) {
+    return [
+      PERMISSIONS.VIEW_ASSIGNED_CASES,
+      PERMISSIONS.VIEW_DOCUMENTS,
+      PERMISSIONS.DOWNLOAD_DOCUMENTS,
+      PERMISSIONS.ADD_EVIDENCE,
+      PERMISSIONS.SEARCH_CASE_RECORDS,
+    ]
+  }
+
+  if (rank === RANKS.ASI) {
+    return [
+      ...basePermissions,
+      PERMISSIONS.ADD_EVIDENCE,
+      PERMISSIONS.UPLOAD_DOCUMENTS,
+      PERMISSIONS.ADD_INVESTIGATION_UPDATE,
+    ]
+  }
+
+  if (rank === RANKS.SI) {
+    return [
+      ...basePermissions,
+      PERMISSIONS.CREATE_CASES,
+      PERMISSIONS.ADD_EVIDENCE,
+      PERMISSIONS.UPLOAD_DOCUMENTS,
+      PERMISSIONS.DOCUMENT_VERSION_CREATE,
+      PERMISSIONS.ADD_INVESTIGATION_UPDATE,
+      PERMISSIONS.REQUEST_ACCESS,
+    ]
+  }
+
+  if (rank === RANKS.LEGAL_OFFICER) {
+    return [
+      ...basePermissions,
+      PERMISSIONS.VIEW_LEGAL_CASES,
+      PERMISSIONS.REVIEW_RECORDS,
+      PERMISSIONS.REVIEW_SENSITIVE_RECORDS,
+    ]
+  }
+
+  if (rank === RANKS.FORENSIC_OFFICER) {
+    return [
+      ...basePermissions,
+      PERMISSIONS.VIEW_FORENSIC_EVIDENCE,
+      PERMISSIONS.ADD_EVIDENCE,
+      PERMISSIONS.UPLOAD_DOCUMENTS,
+      PERMISSIONS.ADD_INVESTIGATION_UPDATE,
+    ]
+  }
+
+  if (rank === RANKS.CYBER_CELL_OFFICER) {
+    return [
+      ...basePermissions,
+      PERMISSIONS.VIEW_CYBER_CASES,
+      PERMISSIONS.ADD_EVIDENCE,
+      PERMISSIONS.UPLOAD_DOCUMENTS,
+      PERMISSIONS.ADD_INVESTIGATION_UPDATE,
+    ]
   }
 
   const createPermissions = [
@@ -152,7 +219,7 @@ export function getPermissionsForRank(rank) {
   }
 
   // HIGHER_AUTHORITY
-  return [
+  const authorityPermissions = [
     ...createPermissions,
     PERMISSIONS.VIEW_DISTRICT_CASES,
     PERMISSIONS.VIEW_STATE_CASES,
@@ -163,7 +230,36 @@ export function getPermissionsForRank(rank) {
     PERMISSIONS.REVIEW_RECORDS,
     PERMISSIONS.REVIEW_SENSITIVE_RECORDS,
     PERMISSIONS.APPROVE_ACCESS,
+    PERMISSIONS.VIEW_AUDIT_LOG,
+    PERMISSIONS.EXPORT_AUDIT_LOG,
   ]
+
+  if ([RANKS.INSPECTOR, RANKS.SHO].includes(rank)) {
+    return authorityPermissions
+  }
+
+  if ([RANKS.DSP, RANKS.ACP].includes(rank)) {
+    return [...authorityPermissions, PERMISSIONS.VIEW_SENSITIVE_DOCUMENTS]
+  }
+
+  if ([RANKS.SP, RANKS.DCP].includes(rank)) {
+    return [...authorityPermissions, PERMISSIONS.VIEW_SENSITIVE_DOCUMENTS]
+  }
+
+  if ([RANKS.DIG, RANKS.IG].includes(rank)) {
+    return [...authorityPermissions, PERMISSIONS.VIEW_SENSITIVE_DOCUMENTS, PERMISSIONS.VIEW_HIGH_SECURITY_DOCUMENTS]
+  }
+
+  if ([RANKS.ADG, RANKS.DGP].includes(rank)) {
+    return [
+      ...authorityPermissions,
+      PERMISSIONS.VIEW_SENSITIVE_DOCUMENTS,
+      PERMISSIONS.VIEW_HIGH_SECURITY_DOCUMENTS,
+      PERMISSIONS.VIEW_HIGHLY_SENSITIVE_DOCUMENTS,
+    ]
+  }
+
+  return authorityPermissions
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -214,9 +310,24 @@ export const PERMISSIONS = {
   REVIEW_RECORDS: 'REVIEW_RECORDS',
   REVIEW_SENSITIVE_RECORDS: 'REVIEW_SENSITIVE_RECORDS',
   APPROVE_ACCESS: 'APPROVE_ACCESS',
+  VIEW_AUDIT_LOG: 'VIEW_AUDIT_LOG',
+  EXPORT_AUDIT_LOG: 'EXPORT_AUDIT_LOG',
 
   // Search
   SEARCH_CASE_RECORDS: 'SEARCH_CASE_RECORDS',
+
+  // Rank-specific capabilities
+  REQUEST_ACCESS: 'REQUEST_ACCESS',
+  VIEW_LEGAL_CASES: 'VIEW_LEGAL_CASES',
+  VIEW_FORENSIC_EVIDENCE: 'VIEW_FORENSIC_EVIDENCE',
+  VIEW_CYBER_CASES: 'VIEW_CYBER_CASES',
+  VIEW_SENSITIVE_DOCUMENTS: 'VIEW_SENSITIVE_DOCUMENTS',
+  VIEW_HIGH_SECURITY_DOCUMENTS: 'VIEW_HIGH_SECURITY_DOCUMENTS',
+  VIEW_HIGHLY_SENSITIVE_DOCUMENTS: 'VIEW_HIGHLY_SENSITIVE_DOCUMENTS',
+  MANAGE_USERS: 'MANAGE_USERS',
+  MANAGE_ROLES: 'MANAGE_ROLES',
+  SYSTEM_CONFIGURATION: 'SYSTEM_CONFIGURATION',
+  VIEW_TECHNICAL_LOGS: 'VIEW_TECHNICAL_LOGS',
 }
 
 // Sensitivity levels — higher number = more restricted
@@ -352,6 +463,18 @@ export function canUpdateCaseStatus(user) {
   if (!user) return false
   if (user.accessLevel >= ACCESS_LEVELS.STATION_SUPERVISOR) return true
   return hasPermission(user, PERMISSIONS.UPDATE_CASE_STATUS)
+}
+
+/**
+ * Security telemetry is deliberately restricted to supervisors and auditors.
+ * The check uses the authenticated profile, never the login-page selection.
+ */
+export function canViewSecurityDashboard(user) {
+  if (!user) return false
+  return hasPermission(user, PERMISSIONS.VIEW_AUDIT_LOG) ||
+    hasPermission(user, PERMISSIONS.REVIEW_RECORDS) ||
+    user.functionalRole === FUNCTIONAL_ROLES.AUDITOR ||
+    user.accessLevel >= ACCESS_LEVELS.DISTRICT_SUPERVISOR
 }
 
 /**

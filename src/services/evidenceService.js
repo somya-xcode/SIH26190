@@ -10,6 +10,7 @@
 import { db } from './mockCaseData'
 import { hasPermission, PERMISSIONS, canAccessCase } from './accessControl'
 import { caseService } from './caseService'
+import { auditService, AUDIT_ACTIONS } from './auditService'
 
 export const evidenceService = {
   /**
@@ -40,6 +41,7 @@ export const evidenceService = {
    */
   addEvidence(user, caseId, data) {
     if (!hasPermission(user, PERMISSIONS.ADD_EVIDENCE)) {
+      auditService.recordDenied({ user, action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT, resourceType: 'EVIDENCE', caseId, reason: 'Evidence entry permission is required.' })
       throw new Error('Access denied: You do not have permission to add evidence.')
     }
     caseService.getCaseById(user, caseId) // authorization check
@@ -57,7 +59,7 @@ export const evidenceService = {
     }, 0)
     const evidenceNumber = `E-${String(maxNum + 1).padStart(3, '0')}`
 
-    return db.addEvidence({
+    const evidence = db.addEvidence({
       caseId,
       evidenceNumber,
       evidenceType,
@@ -74,6 +76,8 @@ export const evidenceService = {
       version: 1,
       changeReason: null,
     })
+    auditService.record({ action: AUDIT_ACTIONS.EVIDENCE_ADDED, user, resourceType: 'EVIDENCE', resourceId: evidence.id, resourceLabel: evidence.evidenceNumber, caseId, details: 'Evidence record appended.' })
+    return evidence
   },
 
   /**
@@ -82,6 +86,7 @@ export const evidenceService = {
    */
   addEvidenceCorrection(user, caseId, parentEvidenceId, data) {
     if (!hasPermission(user, PERMISSIONS.ADD_EVIDENCE)) {
+      auditService.recordDenied({ user, action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT, resourceType: 'EVIDENCE', resourceId: parentEvidenceId, caseId, reason: 'Evidence correction permission is required.' })
       throw new Error('Access denied: You do not have permission to update evidence records.')
     }
     caseService.getCaseById(user, caseId)
@@ -94,7 +99,7 @@ export const evidenceService = {
     if (!description?.trim()) throw new Error('Updated description is required')
     if (!changeReason?.trim()) throw new Error('Reason for correction is required')
 
-    return db.addEvidenceVersion(parentEvidenceId, {
+    const evidence = db.addEvidenceVersion(parentEvidenceId, {
       description: description.trim(),
       source: source?.trim() || parent.source,
       collectedBy: parent.collectedBy,
@@ -106,6 +111,8 @@ export const evidenceService = {
       status: 'ACTIVE',
       changeReason: changeReason.trim(),
     })
+    auditService.record({ action: AUDIT_ACTIONS.EVIDENCE_CORRECTED, user, resourceType: 'EVIDENCE', resourceId: evidence.id, resourceLabel: evidence.evidenceNumber, caseId, details: evidence.changeReason })
+    return evidence
   },
 
   /**

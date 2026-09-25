@@ -11,6 +11,7 @@
 import { db } from './mockCaseData'
 import { hasPermission, PERMISSIONS } from './accessControl'
 import { caseService } from './caseService'
+import { auditService, AUDIT_ACTIONS } from './auditService'
 
 export const factService = {
   /**
@@ -26,6 +27,7 @@ export const factService = {
    */
   addFact(user, caseId, data) {
     if (!hasPermission(user, PERMISSIONS.ADD_CASE_FACT)) {
+      auditService.recordDenied({ user, action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT, resourceType: 'CASE_FACT', caseId, reason: 'Case fact permission is required.' })
       throw new Error('Access denied: You do not have permission to add case facts.')
     }
     caseService.getCaseById(user, caseId)
@@ -33,13 +35,15 @@ export const factService = {
     const { factText, source, confidence } = data
     if (!factText?.trim()) throw new Error('Fact text is required')
 
-    return db.addFact({
+    const fact = db.addFact({
       caseId,
       factText: factText.trim(),
       createdBy: user.id,
       source: source?.trim() || '',
       confidence: confidence || 'REPORTED',
     })
+    auditService.record({ action: AUDIT_ACTIONS.FACT_ADDED, user, resourceType: 'CASE_FACT', resourceId: fact.id, caseId, details: 'Investigation fact appended.' })
+    return fact
   },
 
   /**
@@ -48,6 +52,7 @@ export const factService = {
    */
   addFactCorrection(user, caseId, parentFactId, data) {
     if (!hasPermission(user, PERMISSIONS.ADD_CASE_FACT)) {
+      auditService.recordDenied({ user, action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT, resourceType: 'CASE_FACT', resourceId: parentFactId, caseId, reason: 'Case fact correction permission is required.' })
       throw new Error('Access denied: You do not have permission to add case facts.')
     }
     caseService.getCaseById(user, caseId)
@@ -60,13 +65,15 @@ export const factService = {
     if (!factText?.trim()) throw new Error('New fact text is required')
     if (!changeReason?.trim()) throw new Error('Reason for correction is required')
 
-    return db.addFactCorrection(parentFactId, {
+    const fact = db.addFactCorrection(parentFactId, {
       factText: factText.trim(),
       createdBy: user.id,
       source: source?.trim() || parent.source,
       confidence: confidence || 'REPORTED',
       changeReason: changeReason.trim(),
     })
+    auditService.record({ action: AUDIT_ACTIONS.FACT_CORRECTED, user, resourceType: 'CASE_FACT', resourceId: fact.id, caseId, details: fact.changeReason })
+    return fact
   },
 
   /**
