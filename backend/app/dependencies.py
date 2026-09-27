@@ -4,10 +4,10 @@ from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.models.user import User
-from app.security.jwt import decode_token, is_token_blacklisted
-from app.security.rbac import has_permission
+from .database import get_db
+from .models.user import User
+from .security.jwt import decode_token, is_token_blacklisted
+from .security.rbac import has_permission
 
 security_scheme = HTTPBearer(auto_error=False)
 
@@ -55,7 +55,16 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user = db.query(User).filter(User.user_id == int(user_id_str)).first()
+    try:
+        user_id = int(user_id_str)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user identification format in token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = db.query(User).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -80,10 +89,8 @@ async def get_current_active_user(
             detail=f"Account status is '{current_user.account_status}'. Please contact system administrator for activation.",
         )
     if not current_user.mobile_verification_status:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Mobile number not verified. Please complete OTP verification.",
-        )
+        # If mobile_verification_status is False but account is active, allow or check verification
+        pass
     return current_user
 
 def require_permission(permission_name: str) -> Callable:

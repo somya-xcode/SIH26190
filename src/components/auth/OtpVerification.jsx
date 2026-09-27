@@ -1,24 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  ShieldCheck, Phone, RefreshCw, AlertCircle, CheckCircle2, Lock, Clock, MessageSquare, ArrowLeft, ArrowRight
+  ShieldCheck, Mail, RefreshCw, AlertCircle, CheckCircle2, Lock, Clock, MessageSquare, ArrowLeft, ArrowRight
 } from 'lucide-react'
-import { otpService, maskPhoneNumber } from '../../services/otpService'
+import { otpService, maskPhoneNumber, maskEmail } from '../../services/otpService'
 
 export function OtpVerification({
+  email,
   phone,
   sessionId: initialSessionId,
   expiresAt: initialExpiresAt,
   resendAvailableAt: initialResendAvailableAt,
   onVerificationSuccess,
   onBack,
-  title = "Verify Phone Number",
-  subtitle = "Enter the 6-digit verification code sent to your registered mobile number."
+  title = "Verify Email Address",
+  subtitle = "Enter the 6-digit verification code sent to your registered email address."
 }) {
   const [sessionId, setSessionId] = useState(initialSessionId)
   const [expiresAt, setExpiresAt] = useState(initialExpiresAt)
   const [resendAvailableAt, setResendAvailableAt] = useState(initialResendAvailableAt)
   
+  const targetContact = email || phone || ''
+  const displayContact = email ? maskEmail(email) : maskPhoneNumber(phone)
+
   // OTP input digits array (6 digits)
   const [digits, setDigits] = useState(['', '', '', '', '', ''])
   const inputRefs = [useRef(null), useRef(null), useRef(null), useRef(null), useRef(null), useRef(null)]
@@ -33,7 +37,7 @@ export function OtpVerification({
   const [isVerifying, setIsVerifying] = useState(false)
   const [isSendingSms, setIsSendingSms] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
-  const [infoMsg, setInfoMsg] = useState(`OTP sent to ${maskPhoneNumber(phone)} via SMS.`)
+  const [infoMsg, setInfoMsg] = useState(`OTP sent to ${displayContact} via Email.`)
   const [attempts, setAttempts] = useState(0)
 
   // Initialize timers when session changes or mounts
@@ -150,9 +154,9 @@ export function OtpVerification({
       })
 
       if (res.success) {
-        setInfoMsg('Phone number verified successfully.')
+        setInfoMsg('Email verified successfully.')
         if (onVerificationSuccess) {
-          onVerificationSuccess({ sessionId, phone })
+          onVerificationSuccess({ sessionId, phone, email })
         }
       }
     } catch (err) {
@@ -177,14 +181,13 @@ export function OtpVerification({
       setSessionId(res.sessionId)
       setExpiresAt(res.expiresAt)
       setResendAvailableAt(res.resendAvailableAt)
-      if (res.otpCode) setOtpCode(res.otpCode)
       setDigits(['', '', '', '', '', ''])
       setAttempts(0)
       setIsExpired(false)
-      setInfoMsg(`A new 6-digit OTP has been sent to ${maskPhoneNumber(phone)}.`)
+      setInfoMsg(`A new 6-digit OTP has been sent to ${displayContact}.`)
       inputRefs[0]?.current?.focus()
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to resend OTP via SMS Gateway.')
+      setErrorMsg(err.message || 'Failed to resend OTP email.')
     } finally {
       setIsSendingSms(false)
     }
@@ -205,13 +208,13 @@ export function OtpVerification({
         <p className="otp-subtitle">{subtitle}</p>
       </div>
 
-      {/* Phone Confirmation Alert Banner */}
+      {/* Email Confirmation Alert Banner */}
       <div className="otp-phone-banner">
         <div className="phone-icon-box">
-          <Phone size={18} />
+          <Mail size={18} />
         </div>
         <div className="phone-banner-details">
-          <span className="phone-label">OTP Sent via SMS Gateway to <strong>{maskPhoneNumber(phone)}</strong></span>
+          <span className="phone-label">OTP Sent to Email: <strong>{displayContact}</strong></span>
         </div>
       </div>
 
@@ -306,7 +309,7 @@ export function OtpVerification({
                 onClick={onBack}
                 disabled={isVerifying}
               >
-                <ArrowLeft size={16} /> Change Number
+                <ArrowLeft size={16} /> Change Email
               </button>
             )}
 
@@ -318,7 +321,7 @@ export function OtpVerification({
             >
               <RefreshCw size={15} className={isSendingSms ? 'animate-spin' : ''} />
               {isSendingSms ? (
-                'Sending SMS...'
+                'Sending Email...'
               ) : isResendDisabled ? (
                 `Resend OTP (${resendCooldown}s)`
               ) : (

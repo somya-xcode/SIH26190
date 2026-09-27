@@ -6,7 +6,8 @@ class OTPVerification(Base):
     __tablename__ = "otp_verifications"
 
     otp_id = Column(Integer, primary_key=True, index=True)
-    mobile_number = Column(String(20), nullable=False, index=True)
+    email = Column(String(120), nullable=True, index=True)
+    mobile_number = Column(String(20), nullable=True, index=True)
     hashed_otp = Column(String(255), nullable=False)
     otp_expiration_time = Column(DateTime, nullable=False, index=True)
     verification_status = Column(String(20), default="pending", nullable=False)  # pending, verified, expired, invalidated

@@ -1,10 +1,10 @@
-from app.models.role import Role, Permission, RolePermission, PoliceRankEnum
-from app.models.user import User, TokenBlacklist
-from app.models.otp import OTPVerification
-from app.models.case import Case, CaseAccess
-from app.models.document import Document, DocumentAccess, DocumentSharing, DocumentShare, DocumentVersion
-from app.models.audit import AuditLog
-from app.models.blockchain import BlockchainTransaction
+from .role import Role, Permission, RolePermission, PoliceRankEnum
+from .user import User, TokenBlacklist
+from .otp import OTPVerification
+from .case import Case, CaseAccess
+from .document import Document, DocumentAccess, DocumentSharing, DocumentShare, DocumentVersion
+from .audit import AuditLog
+from .blockchain import BlockchainTransaction
 
 __all__ = [
     "Role",

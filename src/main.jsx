@@ -17,6 +17,7 @@ import { CasesPage as Phase2CasesPage } from './components/cases/CasesPage'
 import { CreateCasePage } from './components/cases/CreateCasePage'
 import { CaseDetailPage } from './components/cases/CaseDetailPage'
 import { SecurityDashboardPage } from './components/security/SecurityDashboardPage'
+import { SettingsPage } from './components/settings/SettingsPage'
 import { hasPermission, PERMISSIONS, canCreateCase, getActionTier, ACTION_TIERS } from './services/accessControl'
 import { auditService, AUDIT_ACTIONS } from './services/auditService'
 
@@ -659,7 +660,7 @@ function SearchPage({ notify, onDelete, setActive }) { const [query, setQuery] =
 
 function UsersPage({ notify }) { return <div className="page"><PageHeader title="Users & Access" text="Manage users, role-based access, and account status." action={<Button onClick={() => notify('success', 'Invite ready', 'An invitation form would open here.')}><UserPlus size={17}/> Add user</Button>}/><section className="panel users-panel"><div className="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Department</th><th>Access level</th><th>Status</th><th>Last active</th><th></th></tr></thead><tbody>{users.map(u => <tr key={u.name}><td><span className="user-cell"><span className="avatar small-avatar">{u.initials}</span><b>{u.name}</b></span></td><td>{u.role}</td><td className="muted">{u.department}</td><td><TypeBadge type={u.access}/></td><td><span className={`status ${u.status.toLowerCase()}`}>{u.status}</span></td><td className="muted">{u.lastActive}</td><td><IconButton label={`Manage ${u.name}`}><MoreHorizontal size={19}/></IconButton></td></tr>)}</tbody></table></div></section></div> }
 
-function SettingsPage({ notify }) { const settings = [['Profile', 'Personal information and assigned role', UserPlus], ['Security', 'Password, multi-factor authentication, and sessions', LockKeyhole], ['Notification Preferences', 'Choose when you are notified', Bell], ['Access Control', 'Default collaboration permissions', KeyRound], ['Audit Settings', 'Log retention and verification', Archive], ['System Preferences', 'Language, date, and workspace settings', SlidersHorizontal]]; return <div className="page narrow-page"><PageHeader title="Settings" text="Control your Secure Digital Documentation Management System workspace and security preferences."/>{settings.map(([title, text, Icon]) => <motion.button className="settings-item" key={title} whileHover={{ y: -2 }} onClick={() => notify('success', `${title} selected`, 'This setting panel is ready to connect to your API.')}><span className="round-icon blue"><Icon size={20}/></span><span><b>{title}</b><small>{text}</small></span><ChevronRight size={18}/></motion.button>)}</div> }
+
 
 function PlaceholderPage({ title }) { return <div className="page narrow-page"><PageHeader title={title} text="A tailored secure workspace view for your assigned records."/><section className="empty-state"><span className="round-icon blue"><FileArchive size={28}/></span><h2>Nothing here yet</h2><p>This frontend state is ready to receive data from your secure backend service.</p><Button>Explore documents</Button></section></div> }
 

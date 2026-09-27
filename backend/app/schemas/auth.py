@@ -2,10 +2,12 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, Dict, Any
 
 class SendOTPRequest(BaseModel):
-    mobile_number: str = Field(..., min_length=10, max_length=15, description="Officer's mobile number")
+    email: EmailStr = Field(..., description="Officer's email address")
+    mobile_number: Optional[str] = None
+    full_name: Optional[str] = "Officer"
 
 class VerifyOTPRequest(BaseModel):
-    mobile_number: str = Field(..., min_length=10, max_length=15)
+    email: EmailStr = Field(..., description="Officer's email address")
     otp: str = Field(..., min_length=6, max_length=6, description="6-digit verification code")
 
 class RegisterOfficerRequest(BaseModel):
@@ -37,9 +39,14 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 class ForgotPasswordRequest(BaseModel):
-    mobile_number: str = Field(..., min_length=10, max_length=15)
+    email: EmailStr = Field(..., description="Officer's registered email address")
 
 class ResetPasswordRequest(BaseModel):
-    mobile_number: str = Field(..., min_length=10, max_length=15)
+    email: EmailStr = Field(..., description="Officer's registered email address")
     otp: str = Field(..., min_length=6, max_length=6)
     new_password: str = Field(..., min_length=8)
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8, description="Minimum 8 characters password")
+

@@ -38,13 +38,10 @@ class Settings(BaseSettings):
     upload_dir: str = os.getenv("UPLOAD_DIR", "./uploads/documents")
     max_file_size_mb: int = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
 
-    # SMS Gateway Integration (Fast2SMS, Twilio, Msg91)
-    sms_provider: str = os.getenv("SMS_PROVIDER", "fast2sms").lower()
-    sms_api_key: SecretStr = Field(default=SecretStr(os.getenv("SMS_API_KEY", "")))
-    sms_sender_id: str = os.getenv("SMS_SENDER_ID", "DOCGRD")
-    twilio_account_sid: str = os.getenv("TWILIO_ACCOUNT_SID", "")
-    twilio_auth_token: SecretStr = Field(default=SecretStr(os.getenv("TWILIO_AUTH_TOKEN", "")))
-    twilio_phone_number: str = os.getenv("TWILIO_PHONE_NUMBER", "")
+    # Email OTP via Resend API
+    resend_api_key: str = os.getenv("RESEND_API_KEY", "")
+    resend_from_email: str = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+    resend_default_to_email: str = os.getenv("RESEND_DEFAULT_TO_EMAIL", "260somyajain@gmail.com")
 
     # OTP Controls
     otp_expiration_seconds: int = int(os.getenv("OTP_EXPIRY_SECONDS", "300"))  # 5 minutes

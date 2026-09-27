@@ -2,7 +2,8 @@ import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ShieldCheck, User, AlertCircle, CheckCircle2, LockKeyhole, FolderKanban, Activity,
-  KeyRound, Menu, X, BriefcaseBusiness, Phone, ArrowLeft, ArrowRight
+  KeyRound, Menu, X, BriefcaseBusiness, Phone, ArrowLeft, ArrowRight,
+  Home, Info, LayoutGrid, HelpCircle, Mail, Globe, LogIn, UserPlus, ChevronDown
 } from 'lucide-react'
 import { PasswordInput } from './PasswordInput';
 import { OtpVerification } from './OtpVerification';
@@ -14,9 +15,53 @@ import { ALL_POSITIONS } from '../../services/accessControl'
 import { authService } from '../../services/authService'
 import { otpService } from '../../services/otpService'
 
+const TRANSLATIONS = {
+  en: {
+    platform: 'Digital Document Management System',
+    tagline: 'Secure Documents | Stronger India',
+    home: 'Home',
+    about: 'About',
+    services: 'Services',
+    help: 'Help & Support',
+    contact: 'Contact',
+    signIn: 'Sign In',
+    signUp: 'Sign Up',
+    secureAccess: 'Secure Access',
+    subtitle: 'Authenticate to access secure legal and investigation records.',
+    officerCredentials: 'Officer Credentials',
+    userId: 'User ID',
+    password: 'Password',
+    forgotPassword: 'Forgot Password?',
+    signInBtn: 'Sign In to Secure Workspace',
+    authenticating: 'Authenticating Identity...',
+    biometricVerification: 'Biometric Verification',
+  },
+  hi: {
+    platform: 'डिजिटल दस्तावेज़ प्रबंधन प्रणाली',
+    tagline: 'सुरक्षित दस्तावेज़ | सशक्त भारत',
+    home: 'मुख्य पृष्ठ',
+    about: 'हमारे बारे में',
+    services: 'सेवाएं',
+    help: 'सहायता एवं समर्थन',
+    contact: 'संपर्क करें',
+    signIn: 'साइन इन',
+    signUp: 'साइन अप',
+    secureAccess: 'सुरक्षित प्रवेश',
+    subtitle: 'सुरक्षित कानूनी और जांच रिकॉर्ड तक पहुंचने के लिए सत्यापित करें।',
+    officerCredentials: 'अधिकारी क्रेडेंशियल',
+    userId: 'यूज़र आई डी',
+    password: 'पासवर्ड',
+    forgotPassword: 'पासवर्ड भूल गए?',
+    signInBtn: 'सुरक्षित कार्यक्षेत्र में साइन इन करें',
+    authenticating: 'पहचान सत्यापित हो रही है...',
+    biometricVerification: 'बायोमेट्रिक सत्यापन',
+  }
+}
+
 const PUBLIC_LINKS = [
-  { id: 'home', label: 'Home' },
-  { id: 'about', label: 'About' },
+  { id: 'home', labelKey: 'home', icon: Home },
+  { id: 'about', labelKey: 'about', icon: Info },
+  { id: 'services', labelKey: 'services', icon: LayoutGrid, hasDropdown: true },
 ]
 
 export function LoginPage() {
@@ -28,6 +73,9 @@ export function LoginPage() {
   }
   const [publicView, setPublicView] = useState('signin')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [currentLang, setCurrentLang] = useState('en')
+  const [langDropdownOpen, setLangDropdownOpen] = useState(false)
+  const t = TRANSLATIONS[currentLang] || TRANSLATIONS.en
 
   // Form states
   const [userId, setUserId] = useState('')
@@ -44,6 +92,7 @@ export function LoginPage() {
   const [signUpId, setSignUpId] = useState('')
   const [signUpPosition, setSignUpPosition] = useState('')
   const [signUpPhone, setSignUpPhone] = useState('')
+  const [signUpEmail, setSignUpEmail] = useState('')
   const [signUpOtp, setSignUpOtp] = useState('')
   const [signUpStep, setSignUpStep] = useState(1)
   const [signUpFaceVerification, setSignUpFaceVerification] = useState(null)
@@ -100,27 +149,44 @@ export function LoginPage() {
     e?.preventDefault()
     setErrorMessage('')
     if (signUpStep === 1) {
-      if (!signUpName.trim() || !signUpId.trim() || !signUpPosition) {
-        setErrorMessage('Please enter your name, username, and police post.')
+      if (!signUpName.trim() || !signUpId.trim() || !signUpPosition || !signUpEmail.trim()) {
+        setErrorMessage('Please enter your name, email, username, and police post.')
+        return
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signUpEmail.trim())) {
+        setErrorMessage('Please enter a valid email address.')
         return
       }
       if (authService.userExists(signUpId)) {
         setErrorMessage('That username is already registered. Please choose another username.')
         return
       }
-      setSignUpStep(2)
+      try {
+        setIsSubmitting(true)
+        const otpRes = await otpService.sendOtp({
+          phone: signUpPhone,
+          email: signUpEmail.trim(),
+          fullName: signUpName.trim()
+        })
+        setOtpSessionId(otpRes.sessionId)
+        setOtpExpiresAt(otpRes.expiresAt)
+        setOtpResendAvailableAt(otpRes.resendAvailableAt)
+        setShowOtpVerification(true)
+        setSuccessMessage(`OTP sent to ${signUpEmail.trim()}. Check your inbox for the 6-digit verification code.`)
+        setSignUpStep(2)
+      } catch (err) {
+        setErrorMessage(err.message || 'Failed to send OTP to registered email.')
+      } finally {
+        setIsSubmitting(false)
+      }
       return
     }
     if (signUpStep === 2) {
-      if (!/^\+?[0-9\s-]{10,15}$/.test(signUpPhone.trim())) {
-        setErrorMessage('Please enter a valid phone number.')
-        return
-      }
       if (!showOtpVerification) {
-        setErrorMessage('Please click Send OTP to receive your verification code.')
+        setErrorMessage('Please request an OTP verification code.')
         return
       }
-      setErrorMessage('Please enter and verify the 6-digit OTP code sent to your phone.')
+      setErrorMessage('Please enter and verify the 6-digit OTP code sent to your registered email.')
       return
     }
     if (signUpStep === 3) {
@@ -150,7 +216,7 @@ export function LoginPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             full_name: signUpName,
-            email: `${signUpId}@police.gov.in`,
+            email: signUpEmail.trim(),
             phone_number: signUpPhone,
             police_id: signUpId,
             rank: signUpPosition,
@@ -185,6 +251,7 @@ export function LoginPage() {
     }
     setSuccessMessage('Registration complete. Redirecting to sign in...')
     window.setTimeout(() => {
+      setSignUpEmail('')
       setSignUpStep(1)
       setSignUpPassword('')
       setSignUpConfirm('')
@@ -205,45 +272,88 @@ export function LoginPage() {
       <div className="login-backdrop-grid" />
 
       <header className="public-nav">
-        <button type="button" className="public-nav-brand" onClick={() => goToView('signin')}>
-          <span className="public-nav-mark">
-            <img src="/images/government-emblem.png" alt="Government of India emblem" />
-          </span>
-          <span className="public-nav-brand-copy">
-            <strong>Ministry of Home Affairs</strong>
-            <small>Government of India</small>
-          </span>
+        <div className="public-nav-left">
+          <button type="button" className="public-nav-brand" onClick={() => goToView('signin')}>
+            <span className="public-nav-mark-wrap">
+              <img src="/esuraksha-logo.jpg" alt="eSuraksha logo" className="public-nav-mark-img" />
+            </span>
+            <div className="public-nav-brand-text">
+              <div className="public-nav-brand-title">
+                <span className="brand-esuraksha" style={{ color: '#000000', fontWeight: 800 }}>eSuraksha</span>
+                <span className="brand-tricolor-bar" />
+              </div>
+              <small className="brand-tagline" style={{ color: '#000000', opacity: 1, textShadow: 'none', filter: 'none', fontWeight: 800 }}>{t.tagline}</small>
+            </div>
+          </button>
           <span className="public-nav-divider" aria-hidden="true" />
-          <span className="public-nav-platform">SECURE DIGITAL DOCUMENTATION MANAGEMENT SYSTEM</span>
-        </button>
+          <span className="public-nav-platform" style={{ color: '#000000', opacity: 1, textShadow: 'none', filter: 'none', fontWeight: 700 }}>{t.platform}</span>
+        </div>
 
         <nav className={`public-nav-links ${mobileNavOpen ? 'open' : ''}`} aria-label="Primary">
-          {PUBLIC_LINKS.map((link) => (
-            <button
-              key={link.id}
-              type="button"
-              className={publicView === link.id ? 'active' : ''}
-              onClick={() => goToView(link.id === 'home' ? 'signin' : link.id)}
-            >
-              {link.label}
-            </button>
-          ))}
+          {PUBLIC_LINKS.map((link) => {
+            const Icon = link.icon
+            return (
+              <div key={link.id} className="nav-item-dropdown-wrapper">
+                <button
+                  type="button"
+                  className={publicView === link.id ? 'active' : ''}
+                  onClick={() => goToView(link.id === 'home' ? 'signin' : link.id)}
+                >
+                  <Icon size={16} />
+                  <span>{t[link.labelKey] || link.labelKey}</span>
+                  {link.hasDropdown && <ChevronDown size={14} className="dropdown-caret" />}
+                </button>
+              </div>
+            )
+          })}
         </nav>
 
         <div className="public-nav-actions">
+          <div className="language-selector-wrap" style={{ position: 'relative' }}>
+            <button
+              type="button"
+              className="language-selector"
+              onClick={() => setLangDropdownOpen(!langDropdownOpen)}
+              aria-label="Select language"
+            >
+              <Globe size={16} />
+              <span>{currentLang === 'hi' ? 'हिन्दी (Hindi)' : 'English'}</span>
+              <ChevronDown size={14} />
+            </button>
+            {langDropdownOpen && (
+              <div className="language-dropdown-menu">
+                <button
+                  type="button"
+                  className={currentLang === 'en' ? 'active' : ''}
+                  onClick={() => { setCurrentLang('en'); setLangDropdownOpen(false); }}
+                >
+                  English
+                </button>
+                <button
+                  type="button"
+                  className={currentLang === 'hi' ? 'active' : ''}
+                  onClick={() => { setCurrentLang('hi'); setLangDropdownOpen(false); }}
+                >
+                  हिन्दी (Hindi)
+                </button>
+              </div>
+            )}
+          </div>
           <button
             type="button"
-            className={`public-nav-ghost ${publicView === 'signin' ? 'active' : ''}`}
+            className={`button secondary nav-signin-btn ${publicView === 'signin' ? 'active' : ''}`}
             onClick={() => goToView('signin')}
           >
-            Sign in
+            <LogIn size={15} />
+            <span>{t.signIn}</span>
           </button>
           <button
             type="button"
-            className={`public-nav-cta ${publicView === 'signup' ? 'active' : ''}`}
+            className={`button primary nav-signup-btn ${publicView === 'signup' ? 'active' : ''}`}
             onClick={() => goToView('signup')}
           >
-            Sign up
+            <UserPlus size={15} />
+            <span>{t.signUp}</span>
           </button>
           <button
             type="button"
@@ -258,18 +368,22 @@ export function LoginPage() {
 
       {mobileNavOpen && (
         <div className="public-nav-drawer">
-          {PUBLIC_LINKS.map((link) => (
-            <button
-              key={link.id}
-              type="button"
-              className={publicView === link.id ? 'active' : ''}
-              onClick={() => goToView(link.id === 'home' ? 'signin' : link.id)}
-            >
-              {link.label}
-            </button>
-          ))}
-          <button type="button" onClick={() => goToView('signin')}>Sign in</button>
-          <button type="button" onClick={() => goToView('signup')}>Sign up</button>
+          {PUBLIC_LINKS.map((link) => {
+            const Icon = link.icon
+            return (
+              <button
+                key={link.id}
+                type="button"
+                className={publicView === link.id ? 'active' : ''}
+                onClick={() => goToView(link.id === 'home' ? 'signin' : link.id)}
+              >
+                <Icon size={18} />
+                <span>{link.label}</span>
+              </button>
+            )
+          })}
+          <button type="button" onClick={() => goToView('signin')}><LogIn size={18} /> Sign In</button>
+          <button type="button" onClick={() => goToView('signup')}><UserPlus size={18} /> Sign Up</button>
         </div>
       )}
 
@@ -315,6 +429,33 @@ export function LoginPage() {
                   To build trusted digital infrastructure for law enforcement and investigation teams, enabling sensitive documents to be managed securely and efficiently with transparency, accountability, and controlled access.
                 </p>
               </div>
+            </article>
+          </div>
+        </section>
+      )}
+
+      {publicView === 'services' && (
+        <section className="public-about" aria-labelledby="services-title">
+          <div className="public-about-hero">
+            <span className="public-about-kicker">CORE SERVICES</span>
+            <h1 id="services-title">Digital Document & Security Services</h1>
+            <p>Comprehensive features designed for secure government document lifecycle management.</p>
+          </div>
+          <div className="public-about-grid">
+            <article className="public-about-card">
+              <span className="public-about-icon"><ShieldCheck size={20} /></span>
+              <h2>Cryptographic Document Protection</h2>
+              <p>End-to-end AES-256 encryption and SHA-256 integrity verification for legal files.</p>
+            </article>
+            <article className="public-about-card">
+              <span className="public-about-icon"><FolderKanban size={20} /></span>
+              <h2>Case Document Repository</h2>
+              <p>Role-based access control (RBAC) ensuring strict confidentiality across departments.</p>
+            </article>
+            <article className="public-about-card">
+              <span className="public-about-icon"><Activity size={20} /></span>
+              <h2>Blockchain Audit Ledger</h2>
+              <p>Immutable logging of all document access, updates, and verification attempts.</p>
             </article>
           </div>
         </section>
@@ -368,20 +509,25 @@ export function LoginPage() {
                         {ALL_POSITIONS.map(position => <option value={position} key={position}>{position}</option>)}
                       </select>
                     </div>
+                    <div className="form-group">
+                      <label htmlFor="signup-email">Official email address <span className="req">*</span></label>
+                      <div className="auth-input-wrapper"><Mail className="input-icon left-icon" size={18} aria-hidden="true" /><input id="signup-email" type="email" className="auth-input" value={signUpEmail} onChange={(e) => setSignUpEmail(e.target.value)} placeholder="Enter your email address" autoComplete="email" /></div>
+                    </div>
                   </>
                 )}
                 {signUpStep === 2 && (
                   <>
-                    <div className="signup-step-heading"><span>Step 2 of 4</span><h3>Verify phone number</h3><p>Enter your phone number to receive a verification code.</p></div>
-                    <div className="form-group"><label htmlFor="signup-phone">Phone number <span className="req">*</span></label><div className="auth-input-wrapper"><Phone className="input-icon left-icon" size={18} aria-hidden="true" /><input id="signup-phone" className="auth-input" value={signUpPhone} onChange={(e) => { setSignUpPhone(e.target.value); setErrorMessage(''); }} placeholder="Enter your phone number" inputMode="tel" autoComplete="tel" /></div></div>
+                    <div className="signup-step-heading"><span>Step 2 of 4</span><h3>Verify email address</h3><p>Enter your official email address to receive an OTP verification code.</p></div>
+                    <div className="form-group"><label htmlFor="signup-email-step2">Official email address <span className="req">*</span></label><div className="auth-input-wrapper"><Mail className="input-icon left-icon" size={18} aria-hidden="true" /><input id="signup-email-step2" type="email" className="auth-input" value={signUpEmail} onChange={(e) => { setSignUpEmail(e.target.value); setErrorMessage(''); }} placeholder="Enter your email address" autoComplete="email" /></div></div>
                     {showOtpVerification ? (
                       <OtpVerification
+                        email={signUpEmail}
                         phone={signUpPhone}
                         sessionId={otpSessionId}
                         expiresAt={otpExpiresAt}
                         resendAvailableAt={otpResendAvailableAt}
                         onVerificationSuccess={() => {
-                          setSuccessMessage('Phone number verified! Proceeding to face registration...');
+                          setSuccessMessage('Email address verified! Proceeding to face registration...');
                           setSignUpStep(3);
                           setShowOtpVerification(false);
                           setOtpSessionId(null);
@@ -398,18 +544,18 @@ export function LoginPage() {
                       />
                     ) : (
                       <button type="button" className="button primary" onClick={async () => {
-                        if (!signUpPhone.trim()) { setErrorMessage('Please enter a valid phone number.'); return; }
+                        if (!signUpEmail.trim()) { setErrorMessage('Please enter a valid email address.'); return; }
                         setErrorMessage('');
                         try {
-                          const otpRes = await otpService.sendOtp({ phone: signUpPhone });
+                          const otpRes = await otpService.sendOtp({ phone: signUpPhone, email: signUpEmail.trim(), fullName: signUpName.trim() });
                           setOtpSessionId(otpRes.sessionId);
                           setOtpExpiresAt(otpRes.expiresAt);
                           setOtpResendAvailableAt(otpRes.resendAvailableAt);
                           setShowOtpVerification(true);
                         } catch (err) {
-                          setErrorMessage(err.message || 'Failed to send OTP.');
+                          setErrorMessage(err.message || 'Failed to send OTP to email.');
                         }
-                      }}>Send OTP</button>
+                      }}>Send OTP to Email</button>
                     )}
                   </>
                 )}
@@ -452,14 +598,14 @@ export function LoginPage() {
               transition={{ duration: 0.35 }}
             >
               <div className="brand-mark-login">
-                <img src="/images/government-emblem.png" alt="Government of India emblem" />
+                <img src="/esuraksha-logo.jpg" alt="eSuraksha logo" />
               </div>
-              <h1>SECURE DIGITAL DOCUMENTATION MANAGEMENT SYSTEM</h1>
+              <h1 className="login-system-title">{t.platform.toUpperCase()}</h1>
             </motion.div>
 
             <div className="login-headings">
-              <h2>Secure Access</h2>
-              <p>Authenticate to access secure legal and investigation records.</p>
+              <h2>{t.secureAccess}</h2>
+              <p>{t.subtitle}</p>
             </div>
 
             {/* Main Authentication Card */}
@@ -504,13 +650,13 @@ export function LoginPage() {
                   <div className="login-col-credentials">
                     <div className="auth-form-section">
                       <div className="section-header">
-                        <h4>Officer Credentials</h4>
+                        <h4>{t.officerCredentials}</h4>
                       </div>
 
                       {/* User ID Field */}
                       <div className="form-group">
                         <label htmlFor="user-id-input">
-                          User ID <span className="req">*</span>
+                          {t.userId} <span className="req">*</span>
                         </label>
                         <div className="auth-input-wrapper">
                           <User className="input-icon left-icon" size={18} aria-hidden="true" />
@@ -522,7 +668,7 @@ export function LoginPage() {
                               setUserId(e.target.value)
                               if (errorMessage) setErrorMessage('')
                             }}
-                            placeholder="Enter your User ID"
+                            placeholder={t.enterUserId}
                             className="auth-input"
                             autoComplete="username"
                             disabled={isSubmitting}
@@ -535,14 +681,14 @@ export function LoginPage() {
                       <div className="form-group">
                         <div className="label-with-action">
                           <label htmlFor="password-input">
-                            Password <span className="req">*</span>
+                            {t.password} <span className="req">*</span>
                           </label>
                           <button
                             type="button"
                             className="text-link-btn"
                             onClick={() => setForgotModalOpen(true)}
                           >
-                            Forgot Password?
+                            {t.forgotPassword}
                           </button>
                         </div>
                         <PasswordInput
@@ -552,6 +698,7 @@ export function LoginPage() {
                             setPassword(e.target.value)
                             if (errorMessage) setErrorMessage('')
                           }}
+                          placeholder={t.enterPassword}
                           disabled={isSubmitting}
                         />
                       </div>
@@ -565,23 +712,23 @@ export function LoginPage() {
                       disabled={isSubmitting}
                     >
                       {isSubmitting ? (
-                        <>Authenticating Identity...</>
+                        <>{t.authenticating}</>
                       ) : (
                         <>
-                          Sign In to Secure Workspace
+                          {t.signInBtn}
                         </>
                       )}
                     </button>
 
                     {/* Security Information Notice */}
-                    <SecurityNotice />
+                    <SecurityNotice t={t} />
                   </div>
 
                   {/* Biometric face authentication */}
                   <div className="login-col-biometrics">
                     <div className="auth-form-section biometrics-section">
                       <div className="section-header">
-                        <h4>Biometric Verification</h4>
+                        <h4>{t.biometricVerification}</h4>
                       </div>
 
                       <FaceAuthentication
@@ -594,6 +741,7 @@ export function LoginPage() {
                           }
                         }}
                         disabled={isSubmitting}
+                        lang={currentLang}
                       />
                     </div>
                   </div>

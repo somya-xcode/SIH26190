@@ -24,6 +24,7 @@ export function FaceAuthentication({
   verificationResult,
   disabled = false,
   registrationMode = false,
+  lang = 'en',
 }) {
   const [status, setStatus] = useState(
     verificationResult?.verified ? AUTH_STATES.SUCCESS : AUTH_STATES.IDLE
@@ -258,69 +259,72 @@ export function FaceAuthentication({
 
   // Helper for status text and badges
   const renderStatus = () => {
+    const isHi = lang === 'hi'
     switch (status) {
       case AUTH_STATES.IDLE:
         return {
           tone: 'neutral',
-          text: 'Face authentication required',
-          desc: 'Start the camera. Biometric scanning begins only after a centered human face is detected.',
+          text: isHi ? 'चेहरा प्रमाणीकरण आवश्यक है' : 'Face authentication required',
+          desc: isHi ? 'कैमरा शुरू करें। केंद्रित चेहरा मिलने पर बायोमेट्रिक स्कैन शुरू होगा।' : 'Start the camera. Biometric scanning begins only after a centered human face is detected.',
           icon: ScanFace,
         }
       case AUTH_STATES.REQUESTING_CAMERA:
         return {
           tone: 'loading',
-          text: 'Requesting camera access...',
-          desc: 'Please allow camera permission in your browser prompt.',
+          text: isHi ? 'कैमरा एक्सेस का अनुरोध किया जा रहा है...' : 'Requesting camera access...',
+          desc: isHi ? 'कृपया ब्राउज़र में कैमरा अनुमति दें।' : 'Please allow camera permission in your browser prompt.',
           icon: RefreshCw,
         }
       case AUTH_STATES.NO_FACE:
         return {
           tone: 'warning',
-          text: 'No face detected. Position your face inside the frame.',
-          desc: errorMessage || 'Ensure your room is well lit and look directly into the camera.',
+          text: isHi ? 'कोई चेहरा नहीं मिला। चेहरा फ्रेम के अंदर रखें।' : 'No face detected. Position your face inside the frame.',
+          desc: errorMessage || (isHi ? 'सुनिश्चित करें कि कमरे में पर्याप्त रोशनी हो।' : 'Ensure your room is well lit and look directly into the camera.'),
           icon: Eye,
         }
       case AUTH_STATES.FACE_DETECTED:
         return {
           tone: 'info',
-          text: 'Face detected. Hold still...',
-          desc: `Hold steady while biometric landmark analysis executes (${holdProgress}%).`,
+          text: isHi ? 'चेहरा मिल गया। स्थिर रहें...' : 'Face detected. Hold still...',
+          desc: isHi ? `बायोमेट्रिक विश्लेषण जारी है (${holdProgress}%)...` : `Hold steady while biometric landmark analysis executes (${holdProgress}%).`,
           icon: ShieldCheck,
         }
       case AUTH_STATES.VERIFYING:
         return {
           tone: 'loading',
-          text: 'Verifying identity...',
-          desc: 'Matching biometric vectors against enrolled investigator credentials.',
+          text: isHi ? 'पहचान सत्यापित की जा रही है...' : 'Verifying identity...',
+          desc: isHi ? 'बायोमेट्रिक क्रेडेंशियल का मिलान किया जा रहा है।' : 'Matching biometric vectors against enrolled investigator credentials.',
           icon: RefreshCw,
         }
       case AUTH_STATES.SUCCESS:
         return {
           tone: 'success',
-          text: registrationMode ? 'Face registered successfully ✓' : 'Face verified successfully ✓',
+          text: registrationMode
+            ? (isHi ? 'चेहरा सफलतापूर्वक पंजीकृत हुआ ✓' : 'Face registered successfully ✓')
+            : (isHi ? 'चेहरा सफलतापूर्वक सत्यापित हुआ ✓' : 'Face verified successfully ✓'),
           desc: registrationMode
-            ? `Biometric profile created for ${userId || 'this account'} (${confidence || 98}% confidence).`
-            : `Officer identity authenticated (${confidence || 98}% biometric confidence).`,
+            ? (isHi ? `बायोमेट्रिक प्रोफ़ाइल बनाई गई (${confidence || 98}% सटीकता)` : `Biometric profile created for ${userId || 'this account'} (${confidence || 98}% confidence).`)
+            : (isHi ? `अधिकारी की पहचान सत्यापित हुई (${confidence || 98}% बायोमेट्रिक विश्वसनीयता)` : `Officer identity authenticated (${confidence || 98}% biometric confidence).`),
           icon: CheckCircle2,
         }
       case AUTH_STATES.FAILURE:
         return {
           tone: 'error',
-          text: 'Face verification failed. Please try again.',
-          desc: errorMessage || 'Biometric matching threshold was not met.',
+          text: isHi ? 'सत्यापन विफल हुआ। पुनः प्रयास करें।' : 'Face verification failed. Please try again.',
+          desc: errorMessage || (isHi ? 'बायोमेट्रिक मिलान सीमा पूरी नहीं हुई।' : 'Biometric matching threshold was not met.'),
           icon: AlertCircle,
         }
       case AUTH_STATES.CAMERA_DENIED:
         return {
           tone: 'error',
-          text: 'Camera access is required',
-          desc: errorMessage || 'Camera permission denied or camera device unavailable.',
+          text: isHi ? 'कैमरा अनुमति आवश्यक है' : 'Camera access is required',
+          desc: errorMessage || (isHi ? 'कैमरा अनुमति अस्वीकृत या उपकरण अनुपलब्ध।' : 'Camera permission denied or camera device unavailable.'),
           icon: VideoOff,
         }
       default:
         return {
           tone: 'neutral',
-          text: 'Face authentication required',
+          text: isHi ? 'चेहरा प्रमाणीकरण आवश्यक है' : 'Face authentication required',
           desc: '',
           icon: ScanFace,
         }
@@ -341,8 +345,8 @@ export function FaceAuthentication({
         <div className="face-auth-title-row">
           <ScanFace className="face-auth-main-icon" size={20} />
           <div>
-            <h3>{registrationMode ? 'Face Registration' : 'Face Authentication'}</h3>
-            <p>{registrationMode ? 'Create a biometric profile for this account' : 'Second-factor biometric identity validation'}</p>
+            <h3>{registrationMode ? (lang === 'hi' ? 'चेहरा पंजीकरण' : 'Face Registration') : (lang === 'hi' ? 'चेहरा प्रमाणीकरण' : 'Face Authentication')}</h3>
+            <p>{registrationMode ? (lang === 'hi' ? 'इस खाते के लिए बायोमेट्रिक प्रोफ़ाइल बनाएं' : 'Create a biometric profile for this account') : (lang === 'hi' ? 'द्वि-स्तरीय बायोमेट्रिक पहचान सत्यापन' : 'Second-factor biometric identity validation')}</p>
           </div>
         </div>
 
@@ -429,7 +433,7 @@ export function FaceAuthentication({
               onClick={handleCancelScan}
             >
               <VideoOff size={16} />
-              Cancel Scan
+              {lang === 'hi' ? 'स्कैन रद्द करें' : 'Cancel Scan'}
             </button>
           ) : status === AUTH_STATES.SUCCESS ? (
             <button
@@ -439,7 +443,7 @@ export function FaceAuthentication({
               disabled={disabled}
             >
               <RefreshCw size={15} />
-              Re-scan Face
+              {lang === 'hi' ? 'चेहरा पुनः स्कैन करें' : 'Re-scan Face'}
             </button>
           ) : status === AUTH_STATES.FAILURE || status === AUTH_STATES.CAMERA_DENIED ? (
             <button
@@ -449,7 +453,7 @@ export function FaceAuthentication({
               disabled={disabled}
             >
               <RefreshCw size={15} />
-              Try Face Scan Again
+              {lang === 'hi' ? 'पुनः प्रयास करें' : 'Try Face Scan Again'}
             </button>
           ) : (
             <button
@@ -459,7 +463,7 @@ export function FaceAuthentication({
               disabled={disabled}
             >
               <Camera size={16} />
-              Scan Your Face
+              {lang === 'hi' ? 'अपना चेहरा स्कैन करें' : 'Scan Your Face'}
             </button>
           )}
         </div>

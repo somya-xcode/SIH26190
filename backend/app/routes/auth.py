@@ -16,6 +16,7 @@ from app.schemas.auth import (
     RefreshTokenRequest,
     ForgotPasswordRequest,
     ResetPasswordRequest,
+    ChangePasswordRequest,
 )
 from app.schemas.registration import StartRegistrationRequest, CompleteRegistrationRequest
 from app.security.password import hash_password, verify_password
@@ -29,9 +30,9 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/send-otp")
 async def send_otp_endpoint(payload: SendOTPRequest, db: Session = Depends(get_db)):
-    """Generate and dispatch a cryptographically secure 6-digit OTP via SMS."""
+    """Generate and dispatch a cryptographically secure 6-digit OTP via Email."""
     try:
-        result = generate_and_dispatch_otp(db, payload.mobile_number)
+        result = generate_and_dispatch_otp(db, email=payload.email, full_name=payload.full_name or "Officer", mobile_number=payload.mobile_number)
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -42,8 +43,8 @@ async def send_otp_endpoint(payload: SendOTPRequest, db: Session = Depends(get_d
 async def verify_otp_endpoint(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
     """Verify the 6-digit OTP code entered by the officer."""
     try:
-        verify_officer_otp(db, payload.mobile_number, payload.otp)
-        return {"status": "success", "message": "Mobile number verified successfully."}
+        verify_officer_otp(db, payload.email, payload.otp)
+        return {"status": "success", "message": "Email address verified successfully."}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -55,21 +56,22 @@ async def register_officer(
 ):
     """
     Register a new police officer.
-    Requires prior successful mobile OTP verification.
+    Requires prior successful email OTP verification.
     """
     clean_mobile = "".join(filter(str.isdigit, payload.mobile_number))
+    clean_email = payload.email.lower().strip()
     ip = get_client_ip(request)
 
-    # 1. Verify OTP was completed for this mobile number within last 15 minutes
+    # 1. Verify OTP was completed for this email within last 15 minutes
     otp_record = db.query(OTPVerification).filter(
-        OTPVerification.mobile_number == clean_mobile,
+        (OTPVerification.email == clean_email) | (OTPVerification.mobile_number == clean_mobile),
         OTPVerification.verification_status == "verified"
     ).order_by(OTPVerification.verified_at.desc()).first()
 
     if not otp_record or not otp_record.verified_at or (datetime.now(timezone.utc).replace(tzinfo=None) - otp_record.verified_at) > timedelta(minutes=15):
         raise HTTPException(
             status_code=400,
-            detail="Mobile number not verified or OTP verification expired. Please verify via OTP first."
+            detail="Email address not verified or OTP verification expired. Please verify via OTP first."
         )
 
     # 2. Check duplicates for mobile, email, and police_id
@@ -142,9 +144,9 @@ async def register_officer(
 
 @router.post("/start-registration")
 async def start_registration(payload: StartRegistrationRequest, db: Session = Depends(get_db)):
-    """Initiate officer onboarding by dispatching mobile verification OTP."""
+    """Initiate officer onboarding by dispatching email verification OTP."""
     try:
-        return generate_and_dispatch_otp(db, payload.phone_number)
+        return generate_and_dispatch_otp(db, email=payload.email, full_name=payload.full_name or "Officer", mobile_number=payload.phone_number)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -438,16 +440,16 @@ async def logout(
 
 @router.post("/forgot-password")
 async def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    """Dispatch password reset OTP to officer's registered mobile number."""
-    clean_mobile = "".join(filter(str.isdigit, payload.mobile_number))
-    user = db.query(User).filter(User.mobile_number == clean_mobile).first()
+    """Dispatch password reset OTP to officer's registered email address."""
+    clean_email = payload.email.lower().strip()
+    user = db.query(User).filter(User.email == clean_email).first()
     if not user:
         # Prevent user enumeration: return success-like response
-        return {"status": "success", "message": "If the number is registered, an OTP has been dispatched."}
+        return {"status": "success", "message": "If the email is registered, an OTP has been dispatched."}
 
     try:
-        generate_and_dispatch_otp(db, clean_mobile)
-        return {"status": "success", "message": "Password reset OTP dispatched to registered mobile number."}
+        generate_and_dispatch_otp(db, email=clean_email, full_name=user.full_name)
+        return {"status": "success", "message": "Password reset OTP dispatched to registered email address."}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -458,13 +460,13 @@ async def reset_password(
     db: Session = Depends(get_db)
 ):
     """Verify OTP and update officer password."""
-    clean_mobile = "".join(filter(str.isdigit, payload.mobile_number))
-    user = db.query(User).filter(User.mobile_number == clean_mobile).first()
+    clean_email = payload.email.lower().strip()
+    user = db.query(User).filter(User.email == clean_email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
     try:
-        verify_officer_otp(db, clean_mobile, payload.otp)
+        verify_officer_otp(db, clean_email, payload.otp)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -480,7 +482,35 @@ async def reset_password(
         resource_id=str(user.user_id),
         user_id=user.user_id,
         ip_address=get_client_ip(request),
-        details="Password reset via mobile OTP verification"
+        details="Password reset via email OTP verification"
     )
 
     return {"status": "success", "message": "Password has been successfully updated. You can now log in."}
+
+
+@router.post("/change-password")
+async def change_password(
+    payload: ChangePasswordRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update officer password when logged in."""
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+
+    current_user.password_hash = hash_password(payload.new_password)
+    db.commit()
+
+    audit_service.record_activity(
+        db=db,
+        action="PASSWORD_CHANGE",
+        resource_type="USER",
+        resource_id=str(current_user.user_id),
+        user_id=current_user.user_id,
+        ip_address=get_client_ip(request),
+        details="User updated password via settings portal"
+    )
+
+    return {"status": "success", "message": "Password changed successfully."}
+

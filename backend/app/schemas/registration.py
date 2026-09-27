@@ -1,7 +1,10 @@
+from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
 
 class StartRegistrationRequest(BaseModel):
-    phone_number: str = Field(..., min_length=10, max_length=15)
+    email: EmailStr = Field(...)
+    full_name: Optional[str] = "Officer"
+    phone_number: Optional[str] = None
 
 class CompleteRegistrationRequest(BaseModel):
     full_name: str = Field(..., min_length=1)

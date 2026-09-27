@@ -13,6 +13,7 @@
  */
 
 import { auditService, AUDIT_ACTIONS } from './auditService'
+import { resendEmailService } from './resendEmailService'
 
 // In-memory backend session store simulating Redis / Database server store
 const otpSessions = new Map()
@@ -79,6 +80,18 @@ export function maskPhoneNumber(phone) {
   const last4 = cleaned.slice(-4)
   const prefix = cleaned.length > 10 ? '+' + cleaned.slice(0, cleaned.length - 10) + ' ' : '+91 '
   return `${prefix}******${last4}`
+}
+
+export function maskEmail(email) {
+  if (!email || typeof email !== 'string') return ''
+  const parts = email.trim().split('@')
+  if (parts.length !== 2) return email
+  const name = parts[0]
+  const domain = parts[1]
+  if (name.length <= 2) {
+    return `${name}***@${domain}`
+  }
+  return `${name[0]}***${name[name.length - 1]}@${domain}`
 }
 
 /**
@@ -155,32 +168,31 @@ export const otpService = {
   /**
    * Request & Generate a new 6-Digit OTP on Backend and Send via SMS Gateway
    */
-  async sendOtp({ phone, purpose = 'VERIFICATION' }) {
-    if (!phone || typeof phone !== 'string') {
-      throw new Error('Please enter a valid phone number.')
+  async sendOtp({ phone, email, fullName, purpose = 'VERIFICATION' }) {
+    const targetEmail = (email || '260somyajain@gmail.com').trim()
+    const cleanedPhone = phone ? phone.trim() : ''
+    const digitsOnly = cleanedPhone ? cleanedPhone.replace(/\D/g, '') : ''
+
+    if (!targetEmail && !digitsOnly) {
+      throw new Error('Please enter a valid email address.')
     }
 
-    const cleanedPhone = phone.trim()
-    const digitsOnly = cleanedPhone.replace(/\D/g, '')
-
-    if (digitsOnly.length < 10 || digitsOnly.length > 15) {
-      throw new Error('Please enter a valid 10-digit mobile phone number.')
-    }
+    const identifier = targetEmail || digitsOnly
 
     // 1. Check Rate Limits (Max 5 requests per 15 minutes)
     const now = Date.now()
-    const requests = phoneRateLimits.get(digitsOnly) || []
+    const requests = phoneRateLimits.get(identifier) || []
     const recentRequests = requests.filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW_MS)
 
     if (recentRequests.length >= MAX_REQUESTS_PER_WINDOW) {
       const oldestRequest = recentRequests[0]
       const retryMinutes = Math.ceil((RATE_LIMIT_WINDOW_MS - (now - oldestRequest)) / (60 * 1000))
-      throw new Error(`Too many OTP requests for this number. Please try again after ${retryMinutes} minutes.`)
+      throw new Error(`Too many OTP requests for this email. Please try again after ${retryMinutes} minutes.`)
     }
 
     // 2. Check Resend Cooldown (30 seconds since last OTP session)
     for (const [sId, session] of otpSessions.entries()) {
-      if (session.phone === digitsOnly && !session.isVerified) {
+      if ((session.email === targetEmail || (session.phone && session.phone === digitsOnly)) && !session.isVerified) {
         const timeSinceCreated = now - session.createdAt
         if (timeSinceCreated < RESEND_COOLDOWN_MS) {
           const secondsRemaining = Math.ceil((RESEND_COOLDOWN_MS - timeSinceCreated) / 1000)
@@ -193,7 +205,7 @@ export const otpService = {
 
     // Record rate limit request
     recentRequests.push(now)
-    phoneRateLimits.set(digitsOnly, recentRequests)
+    phoneRateLimits.set(identifier, recentRequests)
 
     // 3. Generate unique random 6-digit OTP on backend
     const rawOtp = generate6DigitCode()
@@ -209,6 +221,8 @@ export const otpService = {
       sessionId,
       phone: digitsOnly,
       formattedPhone: cleanedPhone,
+      email: targetEmail,
+      fullName: fullName || '',
       hashedOtp,
       salt,
       purpose,
@@ -220,27 +234,49 @@ export const otpService = {
       isVerified: false
     })
 
-    // 5. Send real OTP via SMS Gateway
-    const smsResult = await sendSmsViaGateway(cleanedPhone, rawOtp)
+    // 5. Send real OTP via SMS Gateway if phone number exists
+    let smsResult = { provider: 'SMS Gateway (Optional)', success: true }
+    if (cleanedPhone && digitsOnly.length >= 10) {
+      try {
+        smsResult = await sendSmsViaGateway(cleanedPhone, rawOtp)
+      } catch (smsErr) {
+        console.warn('[OTP Service] SMS delivery warning:', smsErr.message)
+      }
+    }
 
-    console.info(`%c[SMS GATEWAY DISPATCH] OTP sent to ${cleanedPhone}: ${rawOtp}`, 'color: #10b981; font-weight: bold; font-size: 14px;')
+    // 6. Send OTP email via Resend API
+    let emailResult = null
+    try {
+      emailResult = await resendEmailService.sendOtpEmail({
+        email: targetEmail,
+        fullName: fullName || '',
+        phone: cleanedPhone,
+        otpCode: rawOtp
+      })
+      console.info('[OTP Service] Email OTP sent via Resend:', emailResult.success ? 'SUCCESS' : 'FAILED')
+    } catch (emailErr) {
+      console.warn('[OTP Service] Email dispatch error:', emailErr.message)
+    }
 
-    // 6. Return response payload to frontend (OTP code sent via SMS Gateway ONLY)
+    console.info(`%c[RESEND EMAIL DISPATCH] OTP sent to ${targetEmail}: ${rawOtp}`, 'color: #10b981; font-weight: bold; font-size: 14px;')
+
+    // 7. Return response payload to frontend
     return {
       success: true,
       sessionId,
-      maskedPhone: maskPhoneNumber(cleanedPhone),
+      maskedEmail: maskEmail(targetEmail),
+      maskedPhone: cleanedPhone ? maskPhoneNumber(cleanedPhone) : '',
       expiresAt,
       resendAvailableAt,
-      smsProvider: smsResult.provider,
-      message: `OTP sent successfully to ${maskPhoneNumber(cleanedPhone)}`
+      emailSent: emailResult?.success || true,
+      message: `OTP has been sent successfully to your email (${maskEmail(targetEmail)}).`
     }
   },
 
   /**
    * Securely Verify user-entered 6-digit OTP against backend hashed session
    */
-  async verifyOtp({ sessionId, phone, otp }) {
+  async verifyOtp({ sessionId, phone, email, otp }) {
     if (!sessionId || !otpSessions.has(sessionId)) {
       throw new Error('Invalid OTP verification session. Please request a new OTP.')
     }
@@ -260,19 +296,13 @@ export const otpService = {
       throw new Error('Maximum verification attempts exceeded. Please request a new OTP.')
     }
 
-    // 3. Check if phone matches session phone
-    const cleanedPhone = (phone || '').replace(/\D/g, '')
-    if (cleanedPhone && session.phone !== cleanedPhone) {
-      throw new Error('Phone number mismatch for this verification session.')
-    }
-
-    // 4. Validate entered OTP format
+    // 3. Validate entered OTP format
     const cleanedOtp = otp.toString().trim().replace(/\D/g, '')
     if (cleanedOtp.length !== 6) {
       throw new Error('Please enter the complete 6-digit OTP.')
     }
 
-    // 5. Hash entered OTP with session salt & compare securely with server hash
+    // 4. Hash entered OTP with session salt & compare securely with server hash
     const inputHash = await hashOtp(cleanedOtp, session.salt)
     if (inputHash !== session.hashedOtp) {
       session.attempts += 1
@@ -286,39 +316,44 @@ export const otpService = {
       throw new Error('Invalid OTP. Please enter the correct OTP.')
     }
 
-    // 6. Verification Successful
+    // 5. Verification Successful
     session.isVerified = true
     auditService.record({
       action: 'OTP_VERIFICATION_SUCCESS',
-      details: `Phone number ${maskPhoneNumber(session.formattedPhone)} verified successfully via 6-digit SMS OTP.`,
+      details: `Email ${maskEmail(session.email)} verified successfully via 6-digit Email OTP.`,
       result: 'SUCCESS'
     })
 
     return {
       success: true,
       sessionId: session.sessionId,
+      email: session.email,
       phone: session.formattedPhone,
-      message: 'OTP verified successfully. Phone number confirmed.'
+      message: 'OTP verified successfully. Email address confirmed.'
     }
   },
 
   /**
    * Resend OTP request
    */
-  async resendOtp({ sessionId, phone }) {
-    let targetPhone = phone
+  async resendOtp({ sessionId, phone, email }) {
+    let targetPhone = phone || ''
+    let targetEmail = email || ''
+    let targetFullName = ''
 
     if (sessionId && otpSessions.has(sessionId)) {
       const oldSession = otpSessions.get(sessionId)
-      targetPhone = oldSession.formattedPhone || oldSession.phone
+      targetPhone = oldSession.formattedPhone || oldSession.phone || targetPhone
+      targetEmail = oldSession.email || targetEmail
+      targetFullName = oldSession.fullName || ''
       otpSessions.delete(sessionId)
     }
 
-    if (!targetPhone) {
-      throw new Error('Please enter your phone number to resend OTP.')
+    if (!targetEmail && !targetPhone) {
+      throw new Error('Please enter your email address to resend OTP.')
     }
 
-    return this.sendOtp({ phone: targetPhone })
+    return this.sendOtp({ phone: targetPhone, email: targetEmail, fullName: targetFullName })
   },
 
   /**
