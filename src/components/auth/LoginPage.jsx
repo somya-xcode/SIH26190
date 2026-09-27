@@ -4,18 +4,19 @@ import {
   ShieldCheck, User, AlertCircle, CheckCircle2, LockKeyhole, FolderKanban, Activity,
   KeyRound, Menu, X, BriefcaseBusiness, Phone, ArrowLeft, ArrowRight
 } from 'lucide-react'
-import { PasswordInput } from './PasswordInput'
+import { PasswordInput } from './PasswordInput';
+import { OtpVerification } from './OtpVerification';
 import { FaceAuthentication } from './FaceAuthentication'
 import { SecurityNotice } from './SecurityNotice'
 import { useAuth } from '../../context/AuthContext'
 import { cases } from '../../services/mockData'
 import { ALL_POSITIONS } from '../../services/accessControl'
 import { authService } from '../../services/authService'
+import { otpService } from '../../services/otpService'
 
 const PUBLIC_LINKS = [
   { id: 'home', label: 'Home' },
   { id: 'about', label: 'About' },
-  { id: 'services', label: 'Services' },
 ]
 
 export function LoginPage() {
@@ -47,7 +48,13 @@ export function LoginPage() {
   const [signUpStep, setSignUpStep] = useState(1)
   const [signUpFaceVerification, setSignUpFaceVerification] = useState(null)
   const [signUpPassword, setSignUpPassword] = useState('')
-  const [signUpConfirm, setSignUpConfirm] = useState('')
+  const [signUpConfirm, setSignUpConfirm] = useState('');
+  // OTP session state
+  const [otpSessionId, setOtpSessionId] = useState(null);
+  const [otpExpiresAt, setOtpExpiresAt] = useState(null);
+  const [otpResendAvailableAt, setOtpResendAvailableAt] = useState(null);
+  const [otpCode, setOtpCode] = useState('');
+  const [showOtpVerification, setShowOtpVerification] = useState(false);
 
   const goToView = (view) => {
     setPublicView(view)
@@ -89,7 +96,7 @@ export function LoginPage() {
     }
   }
 
-  const handleSignUp = (e) => {
+  const handleSignUp = async (e) => {
     e?.preventDefault()
     setErrorMessage('')
     if (signUpStep === 1) {
@@ -109,11 +116,11 @@ export function LoginPage() {
         setErrorMessage('Please enter a valid phone number.')
         return
       }
-      if (signUpOtp.trim() !== '123456') {
-        setErrorMessage('Invalid OTP. For this demo, enter 123456.')
+      if (!showOtpVerification) {
+        setErrorMessage('Please click Send OTP to receive your verification code.')
         return
       }
-      setSignUpStep(3)
+      setErrorMessage('Please enter and verify the 6-digit OTP code sent to your phone.')
       return
     }
     if (signUpStep === 3) {
@@ -122,6 +129,9 @@ export function LoginPage() {
         return
       }
       setSignUpStep(4)
+      return
+    }
+    if (signUpStep !== 4) {
       return
     }
     if (signUpPassword !== signUpConfirm) {
@@ -133,14 +143,42 @@ export function LoginPage() {
       return
     }
     try {
-      authService.registerLocalUser({
-        id: signUpId,
-        password: signUpPassword,
-        name: signUpName,
-        phone: signUpPhone,
-        rank: signUpPosition,
-        biometricToken: signUpFaceVerification.biometricToken,
-      })
+      // Complete registration with backend API (fallback to local authService if API offline)
+      try {
+        const res = await fetch('/api/auth/complete-registration', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            full_name: signUpName,
+            email: `${signUpId}@police.gov.in`,
+            phone_number: signUpPhone,
+            police_id: signUpId,
+            rank: signUpPosition,
+            station: 'Central Station',
+            district: 'District 1',
+            password: signUpPassword,
+            confirm_password: signUpConfirm
+          })
+        })
+        let data = {}
+        try {
+          const text = await res.text()
+          data = text ? JSON.parse(text) : {}
+        } catch (_) {}
+        if (!res.ok) {
+          throw new Error(data.detail || 'Registration failed')
+        }
+      } catch (apiErr) {
+        // Fallback for demo/offline client state
+        authService.registerLocalUser({
+          id: signUpId,
+          password: signUpPassword,
+          name: signUpName,
+          phone: signUpPhone,
+          rank: signUpPosition,
+          biometricToken: signUpFaceVerification?.biometricToken,
+        })
+      }
     } catch (err) {
       setErrorMessage(err.message || 'Registration could not be completed.')
       return
@@ -151,6 +189,7 @@ export function LoginPage() {
       setSignUpPassword('')
       setSignUpConfirm('')
       setSignUpFaceVerification(null)
+      setShowOtpVerification(false)
       goToView('signin')
     }, 1200)
   }
@@ -333,9 +372,45 @@ export function LoginPage() {
                 )}
                 {signUpStep === 2 && (
                   <>
-                    <div className="signup-step-heading"><span>Step 2 of 4</span><h3>Verify phone number</h3><p>Enter your phone number and confirm the OTP sent to you.</p></div>
-                    <div className="form-group"><label htmlFor="signup-phone">Phone number <span className="req">*</span></label><div className="auth-input-wrapper"><Phone className="input-icon left-icon" size={18} aria-hidden="true" /><input id="signup-phone" className="auth-input" value={signUpPhone} onChange={(e) => setSignUpPhone(e.target.value)} placeholder="Enter your phone number" inputMode="tel" autoComplete="tel" /></div></div>
-                    <div className="form-group"><label htmlFor="signup-otp">OTP confirmation <span className="req">*</span></label><input id="signup-otp" className="auth-input signup-otp-input" value={signUpOtp} onChange={(e) => setSignUpOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Enter 6-digit OTP" inputMode="numeric" autoComplete="one-time-code" maxLength={6} /><small className="signup-demo-hint">Demo OTP: 123456</small></div>
+                    <div className="signup-step-heading"><span>Step 2 of 4</span><h3>Verify phone number</h3><p>Enter your phone number to receive a verification code.</p></div>
+                    <div className="form-group"><label htmlFor="signup-phone">Phone number <span className="req">*</span></label><div className="auth-input-wrapper"><Phone className="input-icon left-icon" size={18} aria-hidden="true" /><input id="signup-phone" className="auth-input" value={signUpPhone} onChange={(e) => { setSignUpPhone(e.target.value); setErrorMessage(''); }} placeholder="Enter your phone number" inputMode="tel" autoComplete="tel" /></div></div>
+                    {showOtpVerification ? (
+                      <OtpVerification
+                        phone={signUpPhone}
+                        sessionId={otpSessionId}
+                        expiresAt={otpExpiresAt}
+                        resendAvailableAt={otpResendAvailableAt}
+                        onVerificationSuccess={() => {
+                          setSuccessMessage('Phone number verified! Proceeding to face registration...');
+                          setSignUpStep(3);
+                          setShowOtpVerification(false);
+                          setOtpSessionId(null);
+                          setOtpExpiresAt(null);
+                          setOtpResendAvailableAt(null);
+                          setTimeout(() => setSuccessMessage(''), 3000);
+                        }}
+                        onBack={() => {
+                          setShowOtpVerification(false);
+                          setOtpSessionId(null);
+                          setOtpExpiresAt(null);
+                          setOtpResendAvailableAt(null);
+                        }}
+                      />
+                    ) : (
+                      <button type="button" className="button primary" onClick={async () => {
+                        if (!signUpPhone.trim()) { setErrorMessage('Please enter a valid phone number.'); return; }
+                        setErrorMessage('');
+                        try {
+                          const otpRes = await otpService.sendOtp({ phone: signUpPhone });
+                          setOtpSessionId(otpRes.sessionId);
+                          setOtpExpiresAt(otpRes.expiresAt);
+                          setOtpResendAvailableAt(otpRes.resendAvailableAt);
+                          setShowOtpVerification(true);
+                        } catch (err) {
+                          setErrorMessage(err.message || 'Failed to send OTP.');
+                        }
+                      }}>Send OTP</button>
+                    )}
                   </>
                 )}
                 {signUpStep === 3 && (
@@ -353,7 +428,11 @@ export function LoginPage() {
                 )}
                 <div className="signup-flow-actions">
                   {signUpStep > 1 && <button type="button" className="button secondary" onClick={goToPreviousSignUpStep}><ArrowLeft size={16} /> Back</button>}
-                  <button type="submit" className="button primary login-submit-btn">{signUpStep === 4 ? 'Complete registration' : <>Continue <ArrowRight size={16} /></>}</button>
+                  {!showOtpVerification && (
+                    <button type="submit" className="button primary login-submit-btn">
+                      {signUpStep === 4 ? 'Complete registration' : <>Continue <ArrowRight size={16} /></>}
+                    </button>
+                  )}
                 </div>
                 <p className="signup-switch">
                   Already have an account?{' '}
@@ -525,20 +604,6 @@ export function LoginPage() {
         )}
 
         <footer className="login-footer">
-          <div className="login-case-stats" aria-label="Case statistics">
-            <div className="login-case-stat">
-              <BriefcaseBusiness size={17} />
-              <span><strong>{caseStats.total}</strong><small>Total Cases</small></span>
-            </div>
-            <div className="login-case-stat completed">
-              <CheckCircle2 size={17} />
-              <span><strong>{caseStats.completed}</strong><small>Completed</small></span>
-            </div>
-            <div className="login-case-stat running">
-              <Activity size={17} />
-              <span><strong>{caseStats.running}</strong><small>Currently Running</small></span>
-            </div>
-          </div>
         </footer>
       </div> {/* close login-inner */}
     </main>

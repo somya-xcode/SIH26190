@@ -5,3 +5,18 @@ dist/
 .env.*
 !.env.example
 *.log
+
+# Python & Backend
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+ENV/
+.pytest_cache/
+*.db
+*.sqlite
+backend/uploads/
+.vscode/
+.DS_Store
+

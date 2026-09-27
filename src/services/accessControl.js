@@ -13,6 +13,8 @@
  *   = ACCESS DECISION
  */
 
+import { auditService, AUDIT_ACTIONS } from './auditService'
+
 // ─────────────────────────────────────────────────────────────────────────────
 // RANKS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -518,4 +520,75 @@ export function getSensitivityColor(sensitivity) {
     HIGHLY_SENSITIVE: 'badge-critical',
   }
   return colors[sensitivity] || 'badge-info'
+}
+
+/**
+ * PHASE 6 RBAC EVALUATION PIPELINE:
+ * Evaluates an Officer Access Request against their Database Role & Permissions.
+ * Branches:
+ *   - YES (Authorized): Returns { authorized: true, status: 'GRANTED' }, records audit log.
+ *   - NO (Unauthorized): Returns { authorized: false, error: 'Access Denied', status: 'DENIED' }, records denied audit log.
+ */
+export function evaluateRBACPermission(user, requestedPermission, resourceInfo = {}) {
+  const timestamp = new Date().toISOString()
+  const requiredPermission = requestedPermission
+
+  if (!user) {
+    auditService.recordDenied({
+      user: null,
+      action: AUDIT_ACTIONS.RESTRICTED_ACCESS_ATTEMPT || 'UNAUTHENTICATED_ACCESS_ATTEMPT',
+      resourceType: resourceInfo.resourceType || 'SYSTEM_RECORD',
+      resourceId: resourceInfo.resourceId || 'UNKNOWN',
+      reason: 'User is not authenticated. Login required.'
+    })
+    return {
+      authorized: false,
+      decision: 'NO',
+      status: 'DENIED',
+      error: 'Access Denied: Authentication required.',
+      timestamp
+    }
+  }
+
+  // 1. Identify Role & Rank from Database
+  const dbRank = user.rank || 'Unknown'
+  const userPermissions = user.permissions || getPermissionsForRank(dbRank)
+
+  // 2. Permission Check Evaluation
+  const isAuthorized = userPermissions.includes(requiredPermission)
+
+  if (isAuthorized) {
+    auditService.record({
+      action: requestedPermission,
+      user,
+      resourceType: resourceInfo.resourceType || 'DOCUMENT',
+      resourceId: resourceInfo.resourceId || 'REC_001',
+      details: `RBAC Evaluation YES: Officer ${user.name} (${dbRank}) granted permission '${requiredPermission}'.`,
+      result: 'SUCCESS'
+    })
+    return {
+      authorized: true,
+      decision: 'YES',
+      status: 'GRANTED',
+      rank: dbRank,
+      permissions: userPermissions,
+      timestamp
+    }
+  } else {
+    auditService.recordDenied({
+      user,
+      action: requestedPermission,
+      resourceType: resourceInfo.resourceType || 'DOCUMENT',
+      resourceId: resourceInfo.resourceId || 'REC_001',
+      reason: `RBAC Evaluation NO: Rank '${dbRank}' lacks required permission '${requiredPermission}'.`
+    })
+    return {
+      authorized: false,
+      decision: 'NO',
+      status: 'DENIED',
+      rank: dbRank,
+      error: `Access Denied: Your assigned rank (${dbRank}) does not have permission for operation '${requiredPermission}'.`,
+      timestamp
+    }
+  }
 }

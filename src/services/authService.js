@@ -43,6 +43,15 @@ function findUser(userId) {
   return [...mockUsers, ...getLocalUsers()].find(user => user.id.toLowerCase() === normalizedId)
 }
 
+function findUserByPhone(phone) {
+  const digits = (phone || '').replace(/\D/g, '')
+  if (!digits) return null
+  return [...mockUsers, ...getLocalUsers()].find(u => {
+    const uDigits = (u.phone || '').replace(/\D/g, '')
+    return uDigits && (uDigits === digits || uDigits.slice(-10) === digits.slice(-10))
+  })
+}
+
 export const authService = {
   userExists(userId) {
     return Boolean(userId && findUser(userId))
@@ -151,6 +160,44 @@ export const authService = {
 
     this.setStoredSession(session)
     auditService.record({ action: AUDIT_ACTIONS.LOGIN_SUCCESS, user: safeUser, details: 'Password and face authentication completed.' })
+    return session
+  },
+
+  /**
+   * Complete Login via Verified Phone Number OTP & Face Verification
+   */
+  async loginWithPhoneOtp({ phone, otpSessionId, faceVerification }) {
+    const user = findUserByPhone(phone)
+    if (!user) {
+      throw new Error('No registered officer account found matching this phone number.')
+    }
+
+    if (!faceVerification || !faceVerification.verified) {
+      auditService.record({ action: AUDIT_ACTIONS.BIOMETRIC_FAILURE, user, result: 'FAILURE', details: 'Face authentication factor was not completed.' })
+      throw new Error('Face authentication required. Please scan your face to complete identity verification.')
+    }
+
+    const { password: _, ...safeUser } = user
+    safeUser.permissions = getPermissionsForRank(safeUser.rank)
+    safeUser.accessLevel = getRankAccessLevel(safeUser.rank)
+
+    const session = {
+      isAuthenticated: true,
+      user: safeUser,
+      authenticationMethod: {
+        phoneOtp: true,
+        face: true,
+      },
+      faceBiometricToken: faceVerification.biometricToken || 'mock_bio_token_' + Date.now(),
+      loginTime: new Date().toISOString(),
+      selectedPosition: safeUser.rank,
+      permissions: safeUser.permissions || [],
+      accessLevel: safeUser.accessLevel,
+      rank: safeUser.rank,
+    }
+
+    this.setStoredSession(session)
+    auditService.record({ action: AUDIT_ACTIONS.LOGIN_SUCCESS, user: safeUser, details: 'Phone SMS OTP and face authentication completed.' })
     return session
   },
 

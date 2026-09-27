@@ -31,6 +31,7 @@ export const mockUsers = [
     department: 'Cyber & Legal Investigations',
     policeStation: 'Cyber Cell Division',
     jurisdiction: 'Delhi',
+    phone: '+91 98765 43210',
     initials: 'PK',
     enrolledBiometrics: true,
     permissions: [
@@ -59,6 +60,7 @@ export const mockUsers = [
     department: 'Cyber & Legal Investigations',
     policeStation: 'Cyber Cell Division',
     jurisdiction: 'Delhi',
+    phone: '+91 98123 45678',
     initials: 'PK',
     enrolledBiometrics: true,
     permissions: [
@@ -87,6 +89,7 @@ export const mockUsers = [
     department: 'Legal Affairs',
     policeStation: 'District Legal Cell',
     jurisdiction: 'Delhi',
+    phone: '+91 98987 65432',
     initials: 'AS',
     enrolledBiometrics: true,
     permissions: [
@@ -123,6 +126,7 @@ export const mockUsers = [
     department: 'Forensic Division',
     policeStation: 'Forensic Lab',
     jurisdiction: 'Delhi',
+    phone: '+91 98555 12345',
     initials: 'RM',
     enrolledBiometrics: true,
     permissions: [
@@ -150,6 +154,7 @@ export const mockUsers = [
     department: 'District Command',
     policeStation: 'SP Office',
     jurisdiction: 'Delhi',
+    phone: '+91 98777 88899',
     initials: 'SS',
     enrolledBiometrics: true,
     permissions: [
@@ -188,6 +193,7 @@ export const mockUsers = [
     department: 'Cyber & Legal Investigations',
     policeStation: 'Cyber Cell Division',
     jurisdiction: 'Delhi',
+    phone: '+91 98444 33221',
     initials: 'VS',
     enrolledBiometrics: true,
     permissions: [

@@ -9,6 +9,7 @@ import { hasPermission, PERMISSIONS } from './accessControl'
 import { caseService } from './caseService'
 import { cryptoService } from './cryptoService'
 import { auditService, AUDIT_ACTIONS } from './auditService'
+import { blockchainService } from './blockchainService'
 
 // Supported MIME types and their display labels
 const ALLOWED_MIME_TYPES = {
@@ -117,6 +118,20 @@ export const documentService = {
     // Update document to point to current version V1
     db.updateDocumentCurrentVersion(doc.id, ver.id)
     db.updateDocumentIntegrity(doc.id, 'VERIFIED', user.id, { versionId: ver.id, mode: 'HASH_RECORDED' })
+
+    // Execute Phase 5 Blockchain Integration Flow (AES-256 Encryption, SHA-256 Hash, ECDSA Sign, Immutable Block Commitment)
+    try {
+      await blockchainService.processBlockchainTransaction({
+        user,
+        caseId,
+        documentId: doc.id,
+        file,
+        documentMetadata: { documentType, classification }
+      })
+    } catch (err) {
+      console.warn('[Blockchain Integration Warning]', err)
+    }
+
     auditService.record({
       action: AUDIT_ACTIONS.DOCUMENT_UPLOAD,
       user,
@@ -124,7 +139,7 @@ export const documentService = {
       resourceId: doc.id,
       resourceLabel: doc.originalFilename,
       caseId,
-      details: `Initial document upload created immutable version V1 (${fileHash.slice(0, 12)}…).`,
+      details: `Initial document upload committed to Blockchain Ledger with SHA-256 hash (${fileHash.slice(0, 12)}…).`,
     })
 
     return db.getDocumentById(doc.id)

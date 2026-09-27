@@ -491,16 +491,224 @@
   margin-top: 0;
 }
 
-.signup-otp-input {
-  letter-spacing: 5px;
+/* OTP Verification Component Styles */
+.otp-verification-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.otp-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.otp-header-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+}
+
+.otp-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.otp-subtitle {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.otp-phone-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.phone-icon-box {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: #1e3a8a;
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.phone-banner-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.phone-label {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.phone-number-display {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.otp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.otp-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.otp-input-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   text-align: center;
 }
 
-.signup-demo-hint {
-  display: block;
-  margin-top: 6px;
-  color: #64748b;
+.otp-digits-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  justify-content: center;
+}
+
+.otp-digit-box {
+  width: 100%;
+  height: 52px;
+  border-radius: 8px;
+  border: 2px solid #cbd5e1;
+  background: #ffffff;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  text-align: center;
+  outline: none;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.otp-digit-box:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+  background: #ffffff;
+}
+
+.otp-digit-box.filled {
+  border-color: #3b82f6;
+  background: #f0f9ff;
+}
+
+.otp-digit-box.expired {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.otp-timer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px;
+}
+
+.otp-timer-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.otp-timer-badge.warning {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.otp-timer-badge.expired {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.otp-attempts-badge {
   font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  background: #f8fafc;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.otp-actions-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.otp-verify-btn {
+  width: 100%;
+  height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.otp-secondary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.otp-back-btn,
+.otp-resend-btn {
+  font-size: 13px;
+  height: 38px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.otp-resend-btn.disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .login-backdrop-glow,
