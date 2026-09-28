@@ -7,6 +7,8 @@
  * 2. faceAuthenticationService: Biometric identity verification against enrolled legal/officer profile.
  */
 
+import { mockUsers } from './mockCaseData'
+
 // ==============================================================================
 // 1. FRONTEND FACE DETECTION SERVICE (Webcam stream + Detection Engine)
 // ==============================================================================
@@ -197,7 +199,7 @@ export const faceAuthenticationService = {
       }
     }
 
-    if (!faceCaptureData && detectionConfidence < 60) {
+    if (typeof faceCaptureData !== 'string' || !faceCaptureData.trim() || detectionConfidence < 60) {
       return {
         verified: false,
         error: 'Insufficient facial biometric resolution. Please re-scan.',
@@ -207,14 +209,22 @@ export const faceAuthenticationService = {
     // In a production deployment, this makes an authenticated POST request to:
     // /api/v1/auth/biometrics/verify { userId, faceCaptureData }
     //
-    // For Phase 1 demo/development mode:
-    // Users with enrolledBiometrics (e.g. demo.investigator, pranshu.kumar, a.singh)
-    // pass biometric verification when a valid face is detected.
-    const enrolledUsers = ['demo.investigator', 'pranshu.kumar', 'a.singh']
-    let isEnrolled = enrolledUsers.includes(userId.trim().toLowerCase())
+    // For Phase 1 demo/development mode, only profiles marked as enrolled can pass.
+    const normalizedUserId = userId.trim().toLowerCase()
+    let isEnrolled = mockUsers.some(
+      user => user.id.trim().toLowerCase() === normalizedUserId && user.enrolledBiometrics
+    )
     try {
       const localUsers = JSON.parse(localStorage.getItem('docguard_local_users') || '[]')
-      isEnrolled = isEnrolled || localUsers.some(user => user.id === userId.trim().toLowerCase() && user.enrolledBiometrics)
+      isEnrolled = isEnrolled || (
+        Array.isArray(localUsers) &&
+        localUsers.some(
+          user =>
+            typeof user?.id === 'string' &&
+            user.id.trim().toLowerCase() === normalizedUserId &&
+            user.enrolledBiometrics === true
+        )
+      )
     } catch {
       // Fall back to the built-in enrolled users if local storage is unavailable.
     }

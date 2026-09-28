@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from typing import Optional, Dict, Any
 
 class SendOTPRequest(BaseModel):
@@ -7,8 +7,15 @@ class SendOTPRequest(BaseModel):
     full_name: Optional[str] = "Officer"
 
 class VerifyOTPRequest(BaseModel):
-    email: EmailStr = Field(..., description="Officer's email address")
+    email: Optional[EmailStr] = Field(None, description="Officer's email address")
+    phone_number: Optional[str] = Field(None, min_length=10, max_length=15, description="Officer's phone number")
     otp: str = Field(..., min_length=6, max_length=6, description="6-digit verification code")
+
+    @model_validator(mode="after")
+    def require_contact(self):
+        if not self.email and not self.phone_number:
+            raise ValueError("An email address or phone number is required.")
+        return self
 
 class RegisterOfficerRequest(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=120)
@@ -49,4 +56,3 @@ class ResetPasswordRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1)
     new_password: str = Field(..., min_length=8, description="Minimum 8 characters password")
-

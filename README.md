@@ -56,6 +56,23 @@ Vite will display the local development URL, normally:
 http://localhost:5173
 ```
 
+### Phone OTP for Sign-up
+
+Sign-up verification is sent to the supplied phone number by the backend SMS gateway. For local demos, enable the fixed OTP:
+
+1. Copy `backend/.env.example` to `backend/.env`.
+2. Set `OTP_DEMO_MODE=true` only for local development. The demo accepts `123456` for each active OTP verification session and does not send SMS. The backend only enables this setting when `APP_ENV=development`.
+3. For real SMS delivery, leave `OTP_DEMO_MODE=false` and configure the SMS provider credentials in `backend/.env`.
+4. Start the backend from the `backend` directory:
+
+   ```bash
+   python -m uvicorn app.main:app --reload --port 8000
+   ```
+
+5. Start Vite from the repository root with `npm run dev`.
+
+The demo OTP is not a substitute for real phone verification and is never enabled by `OTP_DEMO_MODE` in production. It only verifies an active OTP challenge; it does not bypass password or face authentication during sign-in.
+
 ### Production Build
 
 ```bash

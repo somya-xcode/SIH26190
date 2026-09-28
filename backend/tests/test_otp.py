@@ -2,7 +2,13 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from app.database import Base, engine, SessionLocal
 from app.models.otp import OTPVerification
-from app.services.otp_service import hash_otp, verify_otp_hash, verify_officer_otp
+from app.core.config import settings
+from app.services.otp_service import (
+    generate_and_dispatch_otp,
+    hash_otp,
+    verify_otp_hash,
+    verify_officer_otp,
+)
 
 @pytest.fixture(scope="module")
 def db_session():
@@ -45,3 +51,32 @@ def test_otp_verification_workflow(db_session):
     # Re-use attempt fails
     with pytest.raises(ValueError):
         verify_officer_otp(db_session, phone, otp)
+
+def test_demo_otp_is_fixed_and_phone_bound(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "app_env", "development")
+    monkeypatch.setattr(settings, "otp_demo_mode", True)
+
+    result = generate_and_dispatch_otp(
+        db_session,
+        email="demo.phone.otp@example.test",
+        mobile_number="9876500099",
+    )
+
+    assert result["demo_mode"] is True
+    assert result["delivery_status"] == "ready"
+    assert verify_officer_otp(db_session, "9876500099", "123456") is True
+
+def test_demo_otp_is_disabled_outside_development(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "otp_demo_mode", True)
+    monkeypatch.setattr("app.services.otp_service.send_sms", lambda *_: True)
+
+    result = generate_and_dispatch_otp(
+        db_session,
+        email="production.phone.otp@example.test",
+        mobile_number="9876500088",
+    )
+
+    assert result["demo_mode"] is False
+    with pytest.raises(ValueError, match="Invalid OTP"):
+        verify_officer_otp(db_session, "9876500088", "123456")

@@ -2,9 +2,9 @@ from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
 
 class StartRegistrationRequest(BaseModel):
-    email: EmailStr = Field(...)
+    email: Optional[EmailStr] = None
     full_name: Optional[str] = "Officer"
-    phone_number: Optional[str] = None
+    phone_number: str = Field(..., min_length=10, max_length=15)
 
 class CompleteRegistrationRequest(BaseModel):
     full_name: str = Field(..., min_length=1)

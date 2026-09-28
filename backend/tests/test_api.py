@@ -134,6 +134,19 @@ def test_case_and_document_workflow():
     assert chain_resp.json()["total_records"] > 0
 
 def test_complete_registration_endpoint():
+    db = SessionLocal()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.add(OTPVerification(
+        mobile_number="9899112233",
+        hashed_otp=hash_otp("123456"),
+        otp_expiration_time=now + timedelta(minutes=5),
+        verification_status="verified",
+        verified_at=now,
+        number_of_attempts=1
+    ))
+    db.commit()
+    db.close()
+
     resp = client.post("/auth/complete-registration", json={
         "full_name": "Constable Amit Sharma",
         "email": "amit.sharma@police.gov.in",
@@ -149,3 +162,39 @@ def test_complete_registration_endpoint():
     data = resp.json()
     assert data["status"] == "success"
     assert data["police_rank"] == "Constable"
+
+def test_complete_registration_requires_recent_verified_phone_otp():
+    resp = client.post("/auth/complete-registration", json={
+        "full_name": "Officer Without OTP",
+        "email": "officer.without.otp@police.gov.in",
+        "phone_number": "9899001122",
+        "police_id": "POLICE-DL-NO-OTP",
+        "rank": "Constable",
+        "station": "Central Station",
+        "district": "District 1",
+        "password": "SecurePassword@123",
+        "confirm_password": "SecurePassword@123"
+    })
+    assert resp.status_code == 400
+    assert "OTP verification" in resp.json()["detail"]
+
+def test_demo_phone_otp_registration_flow(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "app_env", "development")
+    monkeypatch.setattr(settings, "otp_demo_mode", True)
+    send_resp = client.post("/auth/start-registration", json={
+        "full_name": "Demo Phone Officer",
+        "email": "demo.phone.flow@example.com",
+        "phone_number": "9876500077"
+    })
+    assert send_resp.status_code == 200
+    assert send_resp.json()["demo_mode"] is True
+    assert send_resp.json()["delivery_status"] == "ready"
+
+    verify_resp = client.post("/auth/verify-otp", json={
+        "phone_number": "9876500077",
+        "otp": "123456"
+    })
+    assert verify_resp.status_code == 200
+    assert verify_resp.json()["status"] == "success"

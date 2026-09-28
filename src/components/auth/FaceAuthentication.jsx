@@ -43,6 +43,9 @@ export function FaceAuthentication({
   const detectionLoopRef = useRef(null)
   const holdTimerRef = useRef(null)
   const faceDetectedRef = useRef(false)
+  const verifiedUserIdRef = useRef(
+    (verificationResult?.officerId || userId || '').trim().toLowerCase()
+  )
 
   // Keep statusRef in sync with status
   useEffect(() => {
@@ -74,6 +77,24 @@ export function FaceAuthentication({
       stopAll()
     }
   }, [stopAll])
+
+  useEffect(() => {
+    const normalizedUserId = (userId || '').trim().toLowerCase()
+    if (statusRef.current !== AUTH_STATES.SUCCESS || verifiedUserIdRef.current === normalizedUserId) {
+      return
+    }
+
+    isScanningRef.current = false
+    stopAll()
+    faceDetectedRef.current = false
+    verifiedUserIdRef.current = normalizedUserId
+    setStatus(AUTH_STATES.IDLE)
+    statusRef.current = AUTH_STATES.IDLE
+    setHoldProgress(0)
+    setConfidence(0)
+    setErrorMessage('')
+    onVerificationComplete?.(null)
+  }, [userId, stopAll, onVerificationComplete])
 
   // Handle user clicking "Cancel Scan"
   const handleCancelScan = useCallback(() => {
@@ -113,12 +134,15 @@ export function FaceAuthentication({
         if (!isScanningRef.current) return
 
         if (result.verified) {
+          verifiedUserIdRef.current = (userId || '').trim().toLowerCase()
           setStatus(AUTH_STATES.SUCCESS)
           statusRef.current = AUTH_STATES.SUCCESS
           setConfidence(Math.round(result.confidenceScore || 98))
           stopAll()
           onVerificationComplete?.(result)
         } else {
+          isScanningRef.current = false
+          stopAll()
           setStatus(AUTH_STATES.FAILURE)
           statusRef.current = AUTH_STATES.FAILURE
           setErrorMessage(result.error || 'Face verification failed. Please try again.')
@@ -126,6 +150,8 @@ export function FaceAuthentication({
         }
       } catch (err) {
         if (!isScanningRef.current) return
+        isScanningRef.current = false
+        stopAll()
         setStatus(AUTH_STATES.FAILURE)
         statusRef.current = AUTH_STATES.FAILURE
         setErrorMessage(err.message || 'Face verification failed. Please try again.')

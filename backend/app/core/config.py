@@ -38,12 +38,13 @@ class Settings(BaseSettings):
     upload_dir: str = os.getenv("UPLOAD_DIR", "./uploads/documents")
     max_file_size_mb: int = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
 
-    # Email OTP via Resend API
+    # Email notifications (for non-signup flows)
     resend_api_key: str = os.getenv("RESEND_API_KEY", "")
     resend_from_email: str = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
     resend_default_to_email: str = os.getenv("RESEND_DEFAULT_TO_EMAIL", "260somyajain@gmail.com")
 
     # OTP Controls
+    otp_demo_mode: bool = os.getenv("OTP_DEMO_MODE", "false").lower() in ("true", "1", "yes")
     otp_expiration_seconds: int = int(os.getenv("OTP_EXPIRY_SECONDS", "300"))  # 5 minutes
     otp_max_attempts: int = int(os.getenv("OTP_MAX_ATTEMPTS", "3"))
     otp_resend_cooldown_seconds: int = int(os.getenv("OTP_RESEND_COOLDOWN_SECONDS", "30"))

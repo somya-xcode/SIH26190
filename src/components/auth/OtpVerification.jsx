@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  ShieldCheck, Mail, RefreshCw, AlertCircle, CheckCircle2, Lock, Clock, MessageSquare, ArrowLeft, ArrowRight
+  ShieldCheck, Smartphone, Mail, RefreshCw, AlertCircle, CheckCircle2, Lock, Clock, MessageSquare, ArrowLeft, ArrowRight
 } from 'lucide-react'
 import { otpService, maskPhoneNumber, maskEmail } from '../../services/otpService'
 
@@ -13,15 +13,16 @@ export function OtpVerification({
   resendAvailableAt: initialResendAvailableAt,
   onVerificationSuccess,
   onBack,
-  title = "Verify Email Address",
-  subtitle = "Enter the 6-digit verification code sent to your registered email address."
+  demoMode = false,
+  title = "Verify Phone Number",
+  subtitle = "Enter the 6-digit verification code sent to your phone number."
 }) {
   const [sessionId, setSessionId] = useState(initialSessionId)
   const [expiresAt, setExpiresAt] = useState(initialExpiresAt)
   const [resendAvailableAt, setResendAvailableAt] = useState(initialResendAvailableAt)
   
   const targetContact = email || phone || ''
-  const displayContact = email ? maskEmail(email) : maskPhoneNumber(phone)
+  const displayContact = phone ? maskPhoneNumber(phone) : maskEmail(email)
 
   // OTP input digits array (6 digits)
   const [digits, setDigits] = useState(['', '', '', '', '', ''])
@@ -37,7 +38,7 @@ export function OtpVerification({
   const [isVerifying, setIsVerifying] = useState(false)
   const [isSendingSms, setIsSendingSms] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
-  const [infoMsg, setInfoMsg] = useState(`OTP sent to ${displayContact} via Email.`)
+  const [infoMsg, setInfoMsg] = useState(`OTP sent to ${displayContact} via ${phone ? 'SMS' : 'email'}.`)
   const [attempts, setAttempts] = useState(0)
 
   // Initialize timers when session changes or mounts
@@ -117,7 +118,11 @@ export function OtpVerification({
 
   // Handle key navigation (Backspace, Arrow keys)
   const handleKeyDown = (index, e) => {
-    if (e.key === 'Backspace' && !digits[index] && index > 0) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      e.stopPropagation()
+      handleVerify(e)
+    } else if (e.key === 'Backspace' && !digits[index] && index > 0) {
       inputRefs[index - 1]?.current?.focus()
     } else if (e.key === 'ArrowLeft' && index > 0) {
       inputRefs[index - 1]?.current?.focus()
@@ -148,16 +153,17 @@ export function OtpVerification({
     setIsVerifying(true)
     try {
       const res = await otpService.verifyOtp({
-        sessionId,
         phone,
         otp: enteredOtp
       })
 
       if (res.success) {
-        setInfoMsg('Email verified successfully.')
+        setInfoMsg('Phone number verified successfully.')
         if (onVerificationSuccess) {
           onVerificationSuccess({ sessionId, phone, email })
         }
+      } else {
+        throw new Error(res.message || 'OTP verification failed. Please try again.')
       }
     } catch (err) {
       setAttempts(prev => prev + 1)
@@ -177,7 +183,7 @@ export function OtpVerification({
     setIsSendingSms(true)
 
     try {
-      const res = await otpService.resendOtp({ sessionId, phone })
+      const res = await otpService.resendOtp({ sessionId, phone, email })
       setSessionId(res.sessionId)
       setExpiresAt(res.expiresAt)
       setResendAvailableAt(res.resendAvailableAt)
@@ -211,10 +217,13 @@ export function OtpVerification({
       {/* Email Confirmation Alert Banner */}
       <div className="otp-phone-banner">
         <div className="phone-icon-box">
-          <Mail size={18} />
+          {phone ? <Smartphone size={18} /> : <Mail size={18} />}
         </div>
         <div className="phone-banner-details">
-          <span className="phone-label">OTP Sent to Email: <strong>{displayContact}</strong></span>
+          <span className="phone-label">
+            OTP sent to {phone ? 'phone' : 'email'}: <strong>{displayContact}</strong>
+          </span>
+          {demoMode && <span className="phone-label">Demo OTP: <strong>123456</strong></span>}
         </div>
       </div>
 
@@ -248,7 +257,7 @@ export function OtpVerification({
       </AnimatePresence>
 
       {/* 6-Digit Code Entry */}
-      <form onSubmit={handleVerify} className="otp-form">
+      <div className="otp-form">
         <div className="otp-input-group">
           <label className="otp-input-label">Enter 6-Digit OTP Code</label>
           <div className="otp-digits-grid">
@@ -288,7 +297,8 @@ export function OtpVerification({
         {/* Main Actions */}
         <div className="otp-actions-wrapper">
           <button
-            type="submit"
+            type="button"
+            onClick={handleVerify}
             className={`button primary otp-verify-btn ${isVerifying ? 'submitting' : ''}`}
             disabled={!isComplete || isVerifying || isExpired}
           >
@@ -309,7 +319,7 @@ export function OtpVerification({
                 onClick={onBack}
                 disabled={isVerifying}
               >
-                <ArrowLeft size={16} /> Change Email
+                <ArrowLeft size={16} /> Change {phone ? 'Phone Number' : 'Email'}
               </button>
             )}
 
@@ -321,7 +331,7 @@ export function OtpVerification({
             >
               <RefreshCw size={15} className={isSendingSms ? 'animate-spin' : ''} />
               {isSendingSms ? (
-                'Sending Email...'
+                `Sending ${phone ? 'SMS' : 'Email'}...`
               ) : isResendDisabled ? (
                 `Resend OTP (${resendCooldown}s)`
               ) : (
@@ -330,7 +340,7 @@ export function OtpVerification({
             </button>
           </div>
         </div>
-      </form>
+      </div>
     </motion.div>
   )
 }

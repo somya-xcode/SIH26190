@@ -137,9 +137,13 @@ export const authService = {
     const safeUser = await this.validateCredentials(userId, password)
 
     // 2. Validate face verification factor
-    if (!faceVerification || !faceVerification.verified) {
+    if (
+      !faceVerification ||
+      !faceVerification.verified ||
+      faceVerification.officerId?.trim().toLowerCase() !== safeUser.id.trim().toLowerCase()
+    ) {
       auditService.record({ action: AUDIT_ACTIONS.BIOMETRIC_FAILURE, user: safeUser, result: 'FAILURE', details: 'Face authentication factor was not completed.' })
-      throw new Error('Face authentication required. Please complete face scan.')
+      throw new Error('Face authentication required for this User ID. Please complete face scan.')
     }
 
     // 3. Construct authenticated session object

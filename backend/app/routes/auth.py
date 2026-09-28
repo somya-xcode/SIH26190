@@ -22,6 +22,8 @@ from app.schemas.registration import StartRegistrationRequest, CompleteRegistrat
 from app.security.password import hash_password, verify_password
 from app.security.jwt import create_access_token, create_refresh_token, decode_token, blacklist_token
 from app.services.otp_service import generate_and_dispatch_otp, verify_officer_otp
+from app.services.email_service import EmailDeliveryError, EmailNotConfiguredError
+from app.services.sms_service import SMSGatewayError, SMSGatewayNotConfiguredError
 from app.services.audit_service import audit_service
 from app.dependencies import get_client_ip, get_current_user
 from app.core.config import settings
@@ -36,6 +38,14 @@ async def send_otp_endpoint(payload: SendOTPRequest, db: Session = Depends(get_d
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except EmailNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except SMSGatewayNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except EmailDeliveryError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except SMSGatewayError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to process OTP dispatch.")
 
@@ -43,7 +53,7 @@ async def send_otp_endpoint(payload: SendOTPRequest, db: Session = Depends(get_d
 async def verify_otp_endpoint(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
     """Verify the 6-digit OTP code entered by the officer."""
     try:
-        verify_officer_otp(db, payload.email, payload.otp)
+        verify_officer_otp(db, payload.phone_number or str(payload.email), payload.otp)
         return {"status": "success", "message": "Email address verified successfully."}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -144,11 +154,19 @@ async def register_officer(
 
 @router.post("/start-registration")
 async def start_registration(payload: StartRegistrationRequest, db: Session = Depends(get_db)):
-    """Initiate officer onboarding by dispatching email verification OTP."""
+    """Initiate officer onboarding by dispatching a phone verification OTP."""
     try:
         return generate_and_dispatch_otp(db, email=payload.email, full_name=payload.full_name or "Officer", mobile_number=payload.phone_number)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except EmailNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except SMSGatewayNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except EmailDeliveryError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except SMSGatewayError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to process OTP dispatch.")
 
@@ -164,7 +182,20 @@ async def complete_registration(
     if payload.password != payload.confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match.")
 
+    clean_email = payload.email.lower().strip()
     clean_mobile = "".join(filter(str.isdigit, payload.phone_number))
+    verified_cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=15)
+    verified_otp = db.query(OTPVerification).filter(
+        OTPVerification.mobile_number == clean_mobile,
+        OTPVerification.verification_status == "verified",
+        OTPVerification.verified_at >= verified_cutoff,
+    ).order_by(OTPVerification.verified_at.desc()).first()
+    if not verified_otp:
+        raise HTTPException(
+            status_code=400,
+            detail="Email address not verified or OTP verification expired. Please verify via OTP first."
+        )
+
     ip = get_client_ip(request)
 
     # Check duplicates for mobile, email, and police_id
@@ -209,6 +240,9 @@ async def complete_registration(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    verified_otp.verification_status = "invalidated"
+    db.commit()
 
     audit_service.record_activity(
         db=db,
@@ -513,4 +547,3 @@ async def change_password(
     )
 
     return {"status": "success", "message": "Password changed successfully."}
-

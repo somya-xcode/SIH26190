@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.otp import OTPVerification
 from app.core.config import settings
 from app.services.email_service import send_otp_email, EmailNotConfiguredError, EmailDeliveryError
+from app.services.sms_service import send_sms, SMSGatewayError
 
 # In-memory tracking for IP/Email rate limiting and cooldowns
 _rate_limit_history: Dict[str, List[float]] = {}
@@ -31,59 +32,66 @@ def verify_otp_hash(otp: str, stored_hash: str) -> bool:
     actual_digest = hashlib.sha256(combined).hexdigest()
     return hashlib.sha256(actual_digest.encode()).digest() == hashlib.sha256(expected_digest.encode()).digest()
 
-def check_rate_limits(email: str) -> None:
-    """Enforce rate-limiting and resend cooldowns by email."""
+def check_rate_limits(identifier: str) -> None:
+    """Enforce rate-limiting and resend cooldowns by phone or email."""
     now = time.time()
-    clean_email = email.lower().strip()
+    clean_identifier = identifier.lower().strip()
 
     # Check cooldown
-    last_req = _last_request_time.get(clean_email)
+    last_req = _last_request_time.get(clean_identifier)
     if last_req and (now - last_req) < settings.otp_resend_cooldown_seconds:
         remaining = int(settings.otp_resend_cooldown_seconds - (now - last_req))
         raise ValueError(f"Please wait {remaining} seconds before requesting a new OTP.")
 
     # Check rate limit window
-    history = _rate_limit_history.get(clean_email, [])
+    history = _rate_limit_history.get(clean_identifier, [])
     history = [t for t in history if now - t < settings.otp_rate_limit_window_seconds]
-    _rate_limit_history[clean_email] = history
+    _rate_limit_history[clean_identifier] = history
 
     if len(history) >= settings.otp_rate_limit_max_requests:
-        raise ValueError("Too many OTP requests for this email address. Please try again later.")
+        raise ValueError("Too many OTP requests for this phone or email address. Please try again later.")
 
-def record_otp_request(email: str) -> None:
+def record_otp_request(identifier: str) -> None:
     now = time.time()
-    clean_email = email.lower().strip()
-    _last_request_time[clean_email] = now
-    history = _rate_limit_history.get(clean_email, [])
+    clean_identifier = identifier.lower().strip()
+    _last_request_time[clean_identifier] = now
+    history = _rate_limit_history.get(clean_identifier, [])
     history.append(now)
-    _rate_limit_history[clean_email] = history
+    _rate_limit_history[clean_identifier] = history
 
-def generate_and_dispatch_otp(db: Session, email: str, full_name: str = "Officer", mobile_number: Optional[str] = None) -> Dict[str, str]:
+def generate_and_dispatch_otp(db: Session, email: Optional[str] = None, full_name: str = "Officer", mobile_number: Optional[str] = None) -> Dict[str, str]:
     """
-    Generate cryptographically secure 6-digit OTP, store salted hash, and dispatch via Email (Resend API).
+    Generate a 6-digit OTP, store its salted hash, and dispatch via SMS or email.
     NEVER returns or logs plain OTP.
     """
-    clean_email = email.lower().strip()
-    if "@" not in clean_email or "." not in clean_email:
+    clean_email = email.lower().strip() if email else None
+    clean_mobile = "".join(filter(str.isdigit, mobile_number or ""))
+    if clean_email and ("@" not in clean_email or "." not in clean_email):
         raise ValueError("Invalid email address format.")
+    if not clean_email and len(clean_mobile) < 10:
+        raise ValueError("A valid phone number or email address is required.")
+    if mobile_number and len(clean_mobile) < 10:
+        raise ValueError("Invalid phone number.")
 
-    check_rate_limits(clean_email)
+    identifier = clean_mobile or clean_email
+    check_rate_limits(identifier)
 
     # Invalidate any previously pending OTP for this email
     db.query(OTPVerification).filter(
-        (OTPVerification.email == clean_email) | (OTPVerification.mobile_number == mobile_number if mobile_number else False),
+        (OTPVerification.email == clean_email if clean_email else False) |
+        (OTPVerification.mobile_number == clean_mobile if clean_mobile else False),
         OTPVerification.verification_status == "pending"
     ).update({"verification_status": "invalidated"}, synchronize_session=False)
     db.commit()
 
-    # Generate cryptographically secure 6-digit OTP
-    otp_code = f"{secrets.randbelow(10**6):06d}"
+    demo_mode = settings.otp_demo_mode and settings.app_env.lower() == "development"
+    otp_code = "123456" if demo_mode else f"{secrets.randbelow(10**6):06d}"
     stored_hash = hash_otp(otp_code)
     expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=settings.otp_expiration_seconds)
 
     record = OTPVerification(
         email=clean_email,
-        mobile_number=mobile_number,
+        mobile_number=clean_mobile or None,
         hashed_otp=stored_hash,
         otp_expiration_time=expires_at,
         verification_status="pending",
@@ -94,28 +102,30 @@ def generate_and_dispatch_otp(db: Session, email: str, full_name: str = "Officer
     db.commit()
     db.refresh(record)
 
-    record_otp_request(clean_email)
+    record_otp_request(identifier)
 
-    # Dispatch via Email
-    email_status = "sent"
-    warning = None
-    try:
-        send_otp_email(clean_email, otp_code, full_name)
-    except EmailNotConfiguredError as e:
-        email_status = "simulated_dispatch"
-        warning = str(e)
-    except EmailDeliveryError as e:
-        email_status = "failed"
-        warning = str(e)
+    if not demo_mode:
+        try:
+            if clean_mobile:
+                send_sms(clean_mobile, f"Your eSuraksha verification code is {otp_code}. It expires in {settings.otp_expiration_seconds // 60} minutes.")
+            elif clean_email:
+                send_otp_email(clean_email, otp_code, full_name)
+        except (EmailNotConfiguredError, EmailDeliveryError, SMSGatewayError):
+            record.verification_status = "invalidated"
+            db.commit()
+            raise
 
     res = {
         "status": "success",
-        "message": f"OTP has been sent to your registered email address ({clean_email}).",
+        "message": "Demo OTP is ready for this phone number." if demo_mode else (
+            f"OTP has been sent to your phone number ending in {clean_mobile[-4:]}."
+            if clean_mobile else f"OTP has been sent to your registered email address ({clean_email})."
+        ),
         "expires_in_seconds": str(settings.otp_expiration_seconds),
-        "email_delivery_status": email_status,
+        "resend_after_seconds": str(settings.otp_resend_cooldown_seconds),
+        "delivery_status": "ready" if demo_mode else "sent",
+        "demo_mode": demo_mode,
     }
-    if warning:
-        res["gateway_notice"] = warning
     return res
 
 def verify_officer_otp(db: Session, identifier: str, otp_code: str) -> bool:
@@ -127,7 +137,7 @@ def verify_officer_otp(db: Session, identifier: str, otp_code: str) -> bool:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     record = db.query(OTPVerification).filter(
-        (OTPVerification.email == clean_id) | (OTPVerification.mobile_number == clean_id),
+        (OTPVerification.email == clean_id) | (OTPVerification.mobile_number == "".join(filter(str.isdigit, clean_id))),
         OTPVerification.verification_status == "pending"
     ).order_by(OTPVerification.created_timestamp.desc()).first()
 

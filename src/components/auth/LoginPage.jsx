@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ShieldCheck, User, AlertCircle, CheckCircle2, LockKeyhole, FolderKanban, Activity,
   KeyRound, Menu, X, BriefcaseBusiness, Phone, ArrowLeft, ArrowRight,
-  Home, Info, LayoutGrid, HelpCircle, Mail, Globe, LogIn, UserPlus, ChevronDown
+  Home, Info, LayoutGrid, HelpCircle, Mail, Smartphone, Globe, LogIn, UserPlus, ChevronDown
 } from 'lucide-react'
 import { PasswordInput } from './PasswordInput';
 import { OtpVerification } from './OtpVerification';
@@ -102,6 +102,7 @@ export function LoginPage() {
   const [otpSessionId, setOtpSessionId] = useState(null);
   const [otpExpiresAt, setOtpExpiresAt] = useState(null);
   const [otpResendAvailableAt, setOtpResendAvailableAt] = useState(null);
+  const [otpDemoMode, setOtpDemoMode] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [showOtpVerification, setShowOtpVerification] = useState(false);
 
@@ -149,12 +150,16 @@ export function LoginPage() {
     e?.preventDefault()
     setErrorMessage('')
     if (signUpStep === 1) {
-      if (!signUpName.trim() || !signUpId.trim() || !signUpPosition || !signUpEmail.trim()) {
-        setErrorMessage('Please enter your name, email, username, and police post.')
+      if (!signUpName.trim() || !signUpId.trim() || !signUpPosition || !signUpEmail.trim() || !signUpPhone.trim()) {
+        setErrorMessage('Please enter your name, email, phone number, username, and police post.')
         return
       }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signUpEmail.trim())) {
         setErrorMessage('Please enter a valid email address.')
+        return
+      }
+      if (!/^\+?[\d\s()-]{10,18}$/.test(signUpPhone.trim()) || signUpPhone.replace(/\D/g, '').length < 10 || signUpPhone.replace(/\D/g, '').length > 15) {
+        setErrorMessage('Please enter a valid phone number with 10 to 15 digits.')
         return
       }
       if (authService.userExists(signUpId)) {
@@ -171,11 +176,14 @@ export function LoginPage() {
         setOtpSessionId(otpRes.sessionId)
         setOtpExpiresAt(otpRes.expiresAt)
         setOtpResendAvailableAt(otpRes.resendAvailableAt)
+        setOtpDemoMode(otpRes.demoMode)
         setShowOtpVerification(true)
-        setSuccessMessage(`OTP sent to ${signUpEmail.trim()}. Check your inbox for the 6-digit verification code.`)
+        setSuccessMessage(otpRes.demoMode
+          ? `Demo OTP ready for ${signUpPhone.trim()}: use 123456.`
+          : `OTP sent to ${signUpPhone.trim()}. Check your messages for the 6-digit verification code.`)
         setSignUpStep(2)
       } catch (err) {
-        setErrorMessage(err.message || 'Failed to send OTP to registered email.')
+        setErrorMessage(err.message || 'Failed to send OTP to your phone number.')
       } finally {
         setIsSubmitting(false)
       }
@@ -210,14 +218,15 @@ export function LoginPage() {
     }
     try {
       // Complete registration with backend API (fallback to local authService if API offline)
+      let registrationResponse
       try {
-        const res = await fetch('/api/auth/complete-registration', {
+        registrationResponse = await fetch('/api/auth/complete-registration', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             full_name: signUpName,
             email: signUpEmail.trim(),
-            phone_number: signUpPhone,
+            phone_number: signUpPhone.replace(/\D/g, ''),
             police_id: signUpId,
             rank: signUpPosition,
             station: 'Central Station',
@@ -226,15 +235,7 @@ export function LoginPage() {
             confirm_password: signUpConfirm
           })
         })
-        let data = {}
-        try {
-          const text = await res.text()
-          data = text ? JSON.parse(text) : {}
-        } catch (_) {}
-        if (!res.ok) {
-          throw new Error(data.detail || 'Registration failed')
-        }
-      } catch (apiErr) {
+      } catch {
         // Fallback for demo/offline client state
         authService.registerLocalUser({
           id: signUpId,
@@ -244,6 +245,12 @@ export function LoginPage() {
           rank: signUpPosition,
           biometricToken: signUpFaceVerification?.biometricToken,
         })
+      }
+      if (registrationResponse) {
+        const data = await registrationResponse.json().catch(() => ({}))
+        if (!registrationResponse.ok) {
+          throw new Error(data.detail || 'Registration failed')
+        }
       }
     } catch (err) {
       setErrorMessage(err.message || 'Registration could not be completed.')
@@ -510,6 +517,10 @@ export function LoginPage() {
                       </select>
                     </div>
                     <div className="form-group">
+                      <label htmlFor="signup-phone">Phone number <span className="req">*</span></label>
+                      <div className="auth-input-wrapper"><Smartphone className="input-icon left-icon" size={18} aria-hidden="true" /><input id="signup-phone" type="tel" className="auth-input" value={signUpPhone} onChange={(e) => setSignUpPhone(e.target.value)} placeholder="Enter your phone number" autoComplete="tel" /></div>
+                    </div>
+                    <div className="form-group">
                       <label htmlFor="signup-email">Official email address <span className="req">*</span></label>
                       <div className="auth-input-wrapper"><Mail className="input-icon left-icon" size={18} aria-hidden="true" /><input id="signup-email" type="email" className="auth-input" value={signUpEmail} onChange={(e) => setSignUpEmail(e.target.value)} placeholder="Enter your email address" autoComplete="email" /></div>
                     </div>
@@ -517,8 +528,8 @@ export function LoginPage() {
                 )}
                 {signUpStep === 2 && (
                   <>
-                    <div className="signup-step-heading"><span>Step 2 of 4</span><h3>Verify email address</h3><p>Enter your official email address to receive an OTP verification code.</p></div>
-                    <div className="form-group"><label htmlFor="signup-email-step2">Official email address <span className="req">*</span></label><div className="auth-input-wrapper"><Mail className="input-icon left-icon" size={18} aria-hidden="true" /><input id="signup-email-step2" type="email" className="auth-input" value={signUpEmail} onChange={(e) => { setSignUpEmail(e.target.value); setErrorMessage(''); }} placeholder="Enter your email address" autoComplete="email" /></div></div>
+                    <div className="signup-step-heading"><span>Step 2 of 4</span><h3>Verify phone number</h3><p>Enter the 6-digit code sent to your phone by SMS.</p></div>
+                    <div className="form-group"><label htmlFor="signup-phone-step2">Phone number <span className="req">*</span></label><div className="auth-input-wrapper"><Smartphone className="input-icon left-icon" size={18} aria-hidden="true" /><input id="signup-phone-step2" type="tel" className="auth-input" value={signUpPhone} onChange={(e) => { setSignUpPhone(e.target.value); setErrorMessage(''); }} placeholder="Enter your phone number" autoComplete="tel" /></div></div>
                     {showOtpVerification ? (
                       <OtpVerification
                         email={signUpEmail}
@@ -526,8 +537,9 @@ export function LoginPage() {
                         sessionId={otpSessionId}
                         expiresAt={otpExpiresAt}
                         resendAvailableAt={otpResendAvailableAt}
+                        demoMode={otpDemoMode}
                         onVerificationSuccess={() => {
-                          setSuccessMessage('Email address verified! Proceeding to face registration...');
+                          setSuccessMessage('Phone number verified! Proceeding to face registration...');
                           setSignUpStep(3);
                           setShowOtpVerification(false);
                           setOtpSessionId(null);
@@ -540,22 +552,24 @@ export function LoginPage() {
                           setOtpSessionId(null);
                           setOtpExpiresAt(null);
                           setOtpResendAvailableAt(null);
+                          setOtpDemoMode(false);
                         }}
                       />
                     ) : (
                       <button type="button" className="button primary" onClick={async () => {
-                        if (!signUpEmail.trim()) { setErrorMessage('Please enter a valid email address.'); return; }
+                        if (!signUpPhone.trim()) { setErrorMessage('Please enter a valid phone number.'); return; }
                         setErrorMessage('');
                         try {
                           const otpRes = await otpService.sendOtp({ phone: signUpPhone, email: signUpEmail.trim(), fullName: signUpName.trim() });
                           setOtpSessionId(otpRes.sessionId);
                           setOtpExpiresAt(otpRes.expiresAt);
                           setOtpResendAvailableAt(otpRes.resendAvailableAt);
+                          setOtpDemoMode(otpRes.demoMode);
                           setShowOtpVerification(true);
                         } catch (err) {
-                          setErrorMessage(err.message || 'Failed to send OTP to email.');
+                          setErrorMessage(err.message || 'Failed to send OTP to your phone number.');
                         }
-                      }}>Send OTP to Email</button>
+                      }}>Send OTP to Phone</button>
                     )}
                   </>
                 )}
@@ -666,6 +680,7 @@ export function LoginPage() {
                             value={userId}
                             onChange={(e) => {
                               setUserId(e.target.value)
+                              setFaceVerification(null)
                               if (errorMessage) setErrorMessage('')
                             }}
                             placeholder={t.enterUserId}
